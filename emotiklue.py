@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 
 import itertools
-import operator
-import sys
 
 import torch
 import torch.autograd as autograd
@@ -11,43 +9,36 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 
-class LSTMTagger(nn.Module):
+class LSTMClassifier(nn.Module):
 
-    def __init__(self, word_embedding_dim, char_embedding_dim, char_hidden_dim, hidden_dim, vocab_size, charset_size, tagset_size):
-        super(LSTMTagger, self).__init__()
+    def __init__(self, word_embedding_dim, char_embedding_dim, word_hidden_dim, char_hidden_dim, vocab_size, charset_size, class_size):
+        super(LSTMClassifier, self).__init__()
+
         self.char_hidden_dim = char_hidden_dim
-        self.hidden_dim = hidden_dim
+        self.word_hidden_dim = word_hidden_dim
 
         # embeddings
         self.char_embeddings = nn.Embedding(charset_size, char_embedding_dim)
         self.word_embeddings = nn.Embedding(vocab_size, word_embedding_dim)
 
         # character LSTMs
-        self.forward_char_lstm = nn.LSTM(char_embedding_dim, char_hidden_dim)
-        self.backward_char_lstm = nn.LSTM(char_embedding_dim, char_hidden_dim)
+        self.left_char_lstm = nn.LSTM(char_embedding_dim, char_hidden_dim)
+        self.right_char_lstm = nn.LSTM(char_embedding_dim, char_hidden_dim)
 
-        # The LSTM takes word embeddings as inputs, and outputs hidden states
-        # with dimensionality hidden_dim.
-        # self.char_lstm = nn.LSTM(embedding_dim, hidden_dim // 2, num_layers=1, bidirectional=True)
-        self.lstm = nn.LSTM(word_embedding_dim + 2 * char_hidden_dim, hidden_dim // 2, bidirectional=True)
+        # word LSTMs
+        self.left_word_lstm = nn.LSTM(word_embedding_dim, word_hidden_dim)
+        self.right_word_lstm = nn.LSTM(word_embedding_dim, word_hidden_dim)
 
         # Dropout layer
         self.dropout = nn.Dropout(p=0.1)
 
-        # The linear layer that maps from hidden state space to tag space
-        self.hidden2tag = nn.Linear(hidden_dim, tagset_size)
-        # self.char_hidden = self.init_bi_hidden()
-        self.forward_char_hidden = self.init_hidden(char_hidden_dim)
-        self.backward_char_hidden = self.init_hidden(char_hidden_dim)
-        self.hidden = self.init_bi_hidden(hidden_dim)
+        # The linear layer that maps from hidden state space to class space
+        self.hidden2class = nn.Linear(2 * word_hidden_dim + 2 * char_hidden_dim, class_size)
 
-    def init_bi_hidden(self, dim):
-        # Before we've done anything, we dont have any hidden state.
-        # Refer to the Pytorch documentation to see exactly
-        # why they have this dimensionality.
-        # The axes semantics are (num_layers, minibatch_size, hidden_dim)
-        return (autograd.Variable(torch.zeros(2, 1, dim // 2)),
-                autograd.Variable(torch.zeros(2, 1, dim // 2)))
+        self.left_char_hidden = self.init_hidden(char_hidden_dim)
+        self.right_char_hidden = self.init_hidden(char_hidden_dim)
+        self.left_word_hidden = self.init_hidden(word_hidden_dim)
+        self.right_word_hidden = self.init_hidden(word_hidden_dim)
 
     def init_hidden(self, dim):
         # Before we've done anything, we dont have any hidden state.
@@ -57,40 +48,26 @@ class LSTMTagger(nn.Module):
         return (autograd.Variable(torch.zeros(1, 1, dim)),
                 autograd.Variable(torch.zeros(1, 1, dim)))
 
-    def forward(self, tokens, chars, fwd_boundaries, bwd_boundaries):
-        len_chars = len(chars)
-        len_tokens = len(tokens)
-        char_embeds = self.char_embeddings(chars)
-        # print(char_embeds.size())
-        # print("first embedding")
-        # print(char_embeds[0])
-        rev_char_embeds = char_embeds[torch.linspace(len_chars - 1, 0, len_chars).long()]
-        # print("first embedding")
-        # print(rev_char_embeds[-1])
-        fwd_char_lstm_out, self.forward_char_hidden = self.forward_char_lstm(char_embeds.view(len_chars, 1, -1), self.forward_char_hidden)
-        bwd_char_lstm_out, self.backward_char_hidden = self.backward_char_lstm(rev_char_embeds.view(len_chars, 1, -1), self.backward_char_hidden)
-        # print(fwd_char_lstm_out.size())
-        # print(bwd_char_lstm_out.size())
-        # print(char_lstm_out)
-        fwd_char_lstm_out = fwd_char_lstm_out.view(len_chars, self.char_hidden_dim)
-        bwd_char_lstm_out = bwd_char_lstm_out.view(len_chars, self.char_hidden_dim)
-        fwd_char = fwd_char_lstm_out[fwd_boundaries]
-        bwd_char = bwd_char_lstm_out[bwd_boundaries]
-        # print(fwd_char_lstm_out.size())
-        # print(bwd_char_lstm_out.size())
-        # print("char lstm word ends:")
-        # print(fwd_char_lstm_out[word_ends])
-        # print("char lstm word starts:")
-        # print(bwd_char_lstm_out[word_starts])
-        embeds = self.word_embeddings(tokens)
-        # print(embeds.size())
-        token_repr = torch.cat((embeds, fwd_char, bwd_char), dim=1)
-        # print(token_repr)
-        lstm_out, self.hidden = self.lstm(token_repr.view(len_tokens, 1, -1), self.hidden)
-        dropout = self.dropout(lstm_out.view(len_tokens, -1))
-        tag_space = self.hidden2tag(dropout)
-        tag_scores = F.log_softmax(tag_space, dim=1)
-        return tag_scores
+    def forward(self, left_words, right_words, left_chars, right_chars):
+        left_len_chars = len(left_chars)
+        left_len_words = len(left_words)
+        left_char_embeds = self.char_embeddings(left_chars)
+        left_word_embeds = self.word_embeddings(left_words)
+        left_char_lstm_out, self.left_char_hidden = self.left_char_lstm(left_char_embeds.view(left_len_chars, 1, -1), self.left_char_hidden)
+        left_word_lstm_out, self.left_word_hidden = self.left_word_lstm(left_word_embeds.view(left_len_words, 1, -1), self.left_word_hidden)
+
+        right_len_chars = len(right_chars)
+        right_len_words = len(right_words)
+        right_char_embeds = self.char_embeddings(right_chars)
+        right_word_embeds = self.word_embeddings(right_words)
+        right_char_lstm_out, self.right_char_hidden = self.right_char_lstm(right_char_embeds.view(right_len_chars, 1, -1), self.right_char_hidden)
+        right_word_lstm_out, self.right_word_hidden = self.right_word_lstm(right_word_embeds.view(right_len_words, 1, -1), self.right_word_hidden)
+
+        context = torch.cat((left_word_lstm_out[-1], right_word_lstm_out[-1], left_char_lstm_out[-1], right_char_lstm_out[-1]), dim=1)
+        dropout = self.dropout(context)
+        class_space = self.hidden2class(dropout)
+        class_scores = F.log_softmax(class_space, dim=1)
+        return class_scores
 
 
 def prepare_sequence(seq, to_ix):
@@ -99,86 +76,103 @@ def prepare_sequence(seq, to_ix):
     return autograd.Variable(tensor)
 
 
-def prepare_input(word_seq, word_to_ix, char_to_ix):
-    tokens = prepare_sequence(word_seq, word_to_ix)
-    char_seq = " ".join(word_seq)
-    chars = prepare_sequence(char_seq, char_to_ix)
-    len_chars = len(chars)
-    word_lengths = [len(w) for w in word_seq]
-    fwd_boundaries = itertools.accumulate(word_lengths, operator.add)
-    fwd_boundaries = [end + i - 1 for i, end in enumerate(fwd_boundaries)]
-    bwd_boundaries = itertools.accumulate(word_lengths, operator.add)
-    bwd_boundaries = [start + i - wl for i, (start, wl) in enumerate(zip(bwd_boundaries, word_lengths))]
-    bwd_boundaries = [len_chars - 1 - start for start in bwd_boundaries]
-    return tokens, chars, fwd_boundaries, bwd_boundaries
+def prepare_input(left_words, right_words, left_str, right_str, word_to_ix):
+    left_tokens = prepare_sequence(left_words, word_to_ix)
+    right_tokens = prepare_sequence(reversed(right_words), word_to_ix)
+    left_chars = autograd.Variable(torch.LongTensor(list(left_str.encode())))
+    right_chars = autograd.Variable(torch.LongTensor(list(reversed(right_str.encode()))))
+    return left_tokens, right_tokens, left_chars, right_chars
 
 
-training_data = [("Pierre Vinken , 61 years old , will join the board as a nonexecutive director Nov. 29 .".split(), "NNP NNP , CD NNS JJ , MD VB DT NN IN DT JJ NN NNP CD .".split()),
-                 ("Mr. Vinken is chairman of Elsevier N.V. , the Dutch publishing group .".split(), "NNP NNP VBZ NN IN NNP NNP , DT NNP VBG NN .".split())]
+def create_indexes(training_data):
+    word_to_ix, cls_to_ix, = {}, {}
+    for left, right, l, r, cls in training_data:
+        if cls not in cls_to_ix:
+            cls_to_ix[cls] = len(cls_to_ix)
+        for word in itertools.chain(left, right):
+            if word not in word_to_ix:
+                word_to_ix[word] = len(word_to_ix)
+    ix_to_cls = {v: k for k, v in cls_to_ix.items()}
+    return word_to_ix, cls_to_ix, ix_to_cls
 
-word_to_ix, tag_to_ix, char_to_ix = {}, {}, {}
-for sent, tags in training_data:
-    for word in sent:
-        if word not in word_to_ix:
-            word_to_ix[word] = len(word_to_ix)
-            for char in word:
-                if char not in char_to_ix:
-                    char_to_ix[char] = len(char_to_ix)
-    for tag in tags:
-        if tag not in tag_to_ix:
-            tag_to_ix[tag] = len(tag_to_ix)
-char_to_ix[" "] = len(char_to_ix)
-ix_to_tag = {v: k for k, v in tag_to_ix.items()}
-print(word_to_ix)
-print(tag_to_ix)
-print(char_to_ix)
 
-# These will usually be more like 32 or 64 dimensional.
-# We will keep them small, so we can see how the weights change as we train.
-WORD_EMBEDDING_DIM = 64
-CHAR_EMBEDDING_DIM = 32
-CHAR_HIDDEN_DIM = 32
-HIDDEN_DIM = 128
+def main():
+    training_data = [("@USERNAME A little ", " that I am not invited for drinks anymore! :-(", "anger"),
+                     ("@USERNAME @USERNAME It's pretty ", " that there would even BE stock photos for an event like this.", "disgust"),
+                     ("Apparently I've been black mailing my brother since he was 8 and he will forever be ", " because of it 😑😂", "fear"),
+                     ("Republicans are so ", " that people may treat people like people and not tax margins...wouldn't want to appear human...", "fear"),
+                     ("Katy once felt so ", " that she barely had the strength to live another day and look at her now she's the happiest person alive", "sad"),
+                     ("Number one comment on the Internet every day: \"I am very ", " because not everyone feels exactly the way that I do about everything,\"", "anger"),
+                     ("@USERNAME @USERNAME I'm ever more ", " that #POTUS & #FLOTUS take it in stride. #ClassyCouple Always the higher road taken #Obama", "surprise"),
+                     ("@USERNAME @USERNAME Woohoo! I'm ", " because I breastfed my babies! IN PUBLIC! Quick, lock me up!", "disgust"),
+                     ("@USERNAME — pain I'm in from being so lonely. But I'm ", " that this girl before me didn't make an excuse to leave. Her motive —", "surprise"),
+                     ("pretty ", " that a white republican man keeps introducing other white men on the house floor as ANOTHER CHAMPION OF LIFE. #hr7", "disgust"),
+                     ("@USERNAME no cause I don't wanna be that ", " that I eat an entire thing of ice cream", "sad"),
+                     ("Always be ", " when a woman hits you with the “K.\"", "fear"),
+                     ("@USERNAME AHH YOU'RE SO SWEET TYSM im just ", " that we can appreciate akiham together!!!!", "joy"),
+                     ("Drake wasn't ", " because Madonna kissed him, it's because she reminded him of an ex.. ahahaha", "disgust"),
+                     ("\"And I'm ", " that even as we integrate, we are walking into a place that does not understand...", "fear"),
+                     ("i want to make a curiouscat but too ", " that i wont get any questions and thus look like more of a loser than i already am. insecurity is pretty cool but thats what i get for attention seeking on the INTERNET HAHAH http://url.removed", "fear"),
+                     ("Why is everybody so ", " that I can't scooter❓❓❓", "surprise"),
+                     ("@USERNAME @USERNAME Very ", " that POTUS can't stop tweeting like a 12 year old girl long enough to do his job.", "sad"),
+                     ("@USERNAME he is un", " because he is normal.[NEWLINE]His health reports are normal!", "sad"),
+                     ("It's bare ", " when fat girls tweet \"eat the booty like groceries\". Can you even wash your bum properly you fat shit", "disgust")]
 
-model = LSTMTagger(WORD_EMBEDDING_DIM, CHAR_EMBEDDING_DIM, CHAR_HIDDEN_DIM, HIDDEN_DIM, len(word_to_ix), len(char_to_ix), len(tag_to_ix))
-loss_function = nn.NLLLoss()
-optimizer = optim.SGD(model.parameters(), lr=0.1)
+    # pseudo-preprocessing
+    training_data = [(l.strip().split(), r.strip().split(), l, r, c) for l, r, c in training_data]
 
-# See what the scores are before training
-# Note that element i,j of the output is the score for tag j for word i.
-tokens, chars, fwd_boundaries, bwd_boundaries = prepare_input(training_data[0][0], word_to_ix, char_to_ix)
-tag_scores = model(tokens, chars, fwd_boundaries, bwd_boundaries)
-# print(tag_scores.size())
-# print(tag_scores.max(dim=1))
-print([ix_to_tag[int(ix)] for ix in tag_scores.max(dim=1)[1]])
+    word_to_ix, cls_to_ix, ix_to_cls = create_indexes(training_data)
 
-for epoch in range(20):  # again, normally you would NOT do 300 epochs, it is toy data
-    for sentence, tags in training_data:
-        # Step 1. Remember that Pytorch accumulates gradients.
-        # We need to clear them out before each instance
-        model.zero_grad()
+    WORD_EMBEDDING_DIM = 64
+    CHAR_EMBEDDING_DIM = 16
+    WORD_HIDDEN_DIM = 128
+    CHAR_HIDDEN_DIM = 32
+    CHARSET_SIZE = 256
 
-        # Also, we need to clear out the hidden state of the LSTM,
-        # detaching it from its history on the last instance.
-        model.forward_char_hidden = model.init_hidden(model.char_hidden_dim)
-        model.backward_char_hidden = model.init_hidden(model.char_hidden_dim)
-        model.hidden = model.init_bi_hidden(model.hidden_dim)
+    model = LSTMClassifier(WORD_EMBEDDING_DIM, CHAR_EMBEDDING_DIM, WORD_HIDDEN_DIM, CHAR_HIDDEN_DIM, len(word_to_ix), CHARSET_SIZE, len(cls_to_ix))
+    loss_function = nn.NLLLoss()
+    optimizer = optim.SGD(model.parameters(), lr=0.1)
 
-        # Step 2. Get our inputs ready for the network, that is, turn them into
-        # Variables of word indices.
-        tokens, chars, fwd_boundaries, bwd_boundaries = prepare_input(sentence, word_to_ix, char_to_ix)
-        targets = prepare_sequence(tags, tag_to_ix)
+    # random output before training
+    left_words, right_words, left_str, right_str = training_data[0][0:4]
+    left_tokens, right_tokens, left_chars, right_chars = prepare_input(left_words, right_words, left_str, right_str, word_to_ix)
+    cls_scores = model(left_tokens, right_tokens, left_chars, right_chars)
+    print([ix_to_cls[int(ix)] for ix in cls_scores.max(dim=1)[1]])
 
-        # Step 3. Run our forward pass.
-        tag_scores = model(tokens, chars, fwd_boundaries, bwd_boundaries)
+    for epoch in range(20):
+        print(epoch)
+        for left_words, right_words, left_str, right_str, cls in training_data:
+            # Step 1. Remember that Pytorch accumulates gradients.
+            # We need to clear them out before each instance
+            model.zero_grad()
 
-        # Step 4. Compute the loss, gradients, and update the parameters by
-        #  calling optimizer.step()
-        loss = loss_function(tag_scores, targets)
-        loss.backward()
-        optimizer.step()
+            # Also, we need to clear out the hidden states of the LSTM,
+            # detaching it from its history on the last instance.
+            model.left_char_hidden = model.init_hidden(model.char_hidden_dim)
+            model.right_char_hidden = model.init_hidden(model.char_hidden_dim)
+            model.left_word_hidden = model.init_hidden(model.word_hidden_dim)
+            model.right_word_hidden = model.init_hidden(model.word_hidden_dim)
 
-# See what the scores are after training
-tokens, chars, fwd_boundaries, bwd_boundaries = prepare_input(training_data[0][0], word_to_ix, char_to_ix)
-tag_scores = model(tokens, chars, fwd_boundaries, bwd_boundaries)
-print([ix_to_tag[int(ix)] for ix in tag_scores.max(dim=1)[1]])
+            # Step 2. Get our inputs ready for the network, that is, turn them into
+            # Variables of word indices.
+            left_tokens, right_tokens, left_chars, right_chars = prepare_input(left_words, right_words, left_str, right_str, word_to_ix)
+            target = autograd.Variable(torch.LongTensor([cls_to_ix[cls]]))
+
+            # Step 3. Run our forward pass.
+            cls_scores = model(left_tokens, right_tokens, left_chars, right_chars)
+
+            # Step 4. Compute the loss, gradients, and update the parameters by
+            #  calling optimizer.step()
+            loss = loss_function(cls_scores, target)
+            loss.backward()
+            optimizer.step()
+
+    # we should have learned something
+    left_words, right_words, left_str, right_str = training_data[0][0:4]
+    left_tokens, right_tokens, left_chars, right_chars = prepare_input(left_words, right_words, left_str, right_str, word_to_ix)
+    cls_scores = model(left_tokens, right_tokens, left_chars, right_chars)
+    print([ix_to_cls[int(ix)] for ix in cls_scores.max(dim=1)[1]])
+
+
+if __name__ == "__main__":
+    main()
