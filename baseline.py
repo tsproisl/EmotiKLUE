@@ -101,7 +101,7 @@ def tfidf_baseline_svm(train_data, train_labels, test_data, test_labels):
     # test = scaler.transform(test)
     clf.fit(train, train_labels)
     pred = clf.predict(test)
-    print("\n## Bag of words (Linear SVC) ##\n")
+    print("\n## Bag of words tf-idf (Linear SVC) ##\n")
     evaluate_iest.calculatePRF(test_labels, pred.tolist())
 
 

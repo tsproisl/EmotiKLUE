@@ -56,7 +56,7 @@ MicAvg	4509	5091	5091	0.47	0.47	0.47
 MacAvg				0.468	0.47	0.469
 Official result: 0.4685509391074993
 
-## Bag of words (Linear SVC) ##
+## Bag of words tf-idf (Linear SVC) ##
 
 Labels: joy;sad;fear;disgust;anger;surprise
 Label	TP	FP	FN	P	R	F
