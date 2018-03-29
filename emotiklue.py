@@ -15,7 +15,8 @@ import torch.optim as optim
 import torch.utils.data
 
 # https://github.com/ngarneau/understanding-pytorch-batching-lstm/blob/master/Understanding%20Pytorch%20Batching.ipynb
-
+# https://discuss.pytorch.org/t/solved-multiple-packedsequence-input-ordering/2106/4
+# LSTM: (seq_len, batch, input_size) vs. (batch, seq_len, input_size)
 
 class IESTDataset(torch.utils.data.Dataset):
     """IEST dataset"""
@@ -72,8 +73,8 @@ class Vectorizer(object):
         # right_chars = torch.LongTensor(list(reversed(right_str.encode())))
         # target = torch.LongTensor(self.cls_to_ix[cls])
 
-        left_tokens = [self.word_to_ix[w] for w in left_words]
-        right_tokens = [self.word_to_ix[w] for w in right_words]
+        left_tokens = [self.word_to_ix.get(w, len(self.word_to_ix)) for w in left_words]
+        right_tokens = [self.word_to_ix.get(w, len(self.word_to_ix)) for w in right_words]
         left_chars = list(left_str.encode())
         right_chars = list(reversed(right_str.encode()))
         target = self.cls_to_ix[cls]
@@ -104,12 +105,13 @@ class AverageMeter(object):
 
 
 class LSTMClassifier(nn.Module):
-    def __init__(self, word_embedding_dim, char_embedding_dim, word_hidden_dim, char_hidden_dim, vocab_size, charset_size, class_size):
+    def __init__(self, word_embedding_dim, char_embedding_dim, word_hidden_dim, char_hidden_dim, vocab_size, charset_size, class_size, batch_size):
         super(LSTMClassifier, self).__init__()
 
         self.char_hidden_dim = char_hidden_dim
         self.word_hidden_dim = word_hidden_dim
-
+        self.batch_size = batch_size
+        
         # embeddings
         self.char_embeddings = nn.Embedding(charset_size, char_embedding_dim)
         self.word_embeddings = nn.Embedding(vocab_size, word_embedding_dim)
@@ -138,14 +140,16 @@ class LSTMClassifier(nn.Module):
         # Refer to the Pytorch documentation to see exactly
         # why they have this dimensionality.
         # The axes semantics are (num_layers, minibatch_size, hidden_dim)
-        return (autograd.Variable(torch.zeros(1, 1, dim)),
-                autograd.Variable(torch.zeros(1, 1, dim)))
+        return (autograd.Variable(torch.zeros(1, self.batch_size, dim)),
+                autograd.Variable(torch.zeros(1, self.batch_size, dim)))
 
     def forward(self, left_words, right_words, left_chars, right_chars):
         left_len_chars = len(left_chars)
         left_len_words = len(left_words)
         left_char_embeds = self.char_embeddings(left_chars)
         left_word_embeds = self.word_embeddings(left_words)
+        print(left_char_embeds.size())
+        print(left_len_chars)
         left_char_lstm_out, self.left_char_hidden = self.left_char_lstm(left_char_embeds.view(left_len_chars, 1, -1), self.left_char_hidden)
         left_word_lstm_out, self.left_word_hidden = self.left_word_lstm(left_word_embeds.view(left_len_words, 1, -1), self.left_word_hidden)
 
@@ -214,6 +218,19 @@ def pad_sequences(seqs, seq_lengths):
     for idx, (seq, seq_len) in enumerate(zip(seqs, seq_lengths)):
         seq_tensor[idx, :seq_len] = torch.LongTensor(seq)
     return seq_tensor
+
+
+def sort_batch(batch, targets, lengths):
+    """Sort samples in batch 
+
+    Stolen from:
+    https://github.com/ngarneau/understanding-pytorch-batching-lstm/blob/master/Understanding%20Pytorch%20Batching.ipynb
+
+    """
+    seq_lengths, perm_idx = lengths.sort(0, descending=True)
+    seq_tensor = batch[perm_idx]
+    targ_tensor = targets[perm_idx]
+    return seq_tensor.transpose(0, 1), targ_tensor, seq_lengths
 
 
 def train(train_loader, model, loss_function, optimizer, epoch, print_freq=1):
@@ -330,21 +347,20 @@ def main():
     WORD_HIDDEN_DIM = 128
     CHAR_HIDDEN_DIM = 32
     CHARSET_SIZE = 256
-    BATCH_SIZE = 1
+    BATCH_SIZE = 4
     EPOCHS = 20
 
     args = arguments()
 
     # train and validation datasets
     train_dataset = IESTDataset(args.train)
-    print(len(train_dataset))
     vectorize = train_dataset.vectorize
     val_dataset = IESTDataset(args.val, vectorize=vectorize)
     # CUDA: pin_memory=True?
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-    model = LSTMClassifier(WORD_EMBEDDING_DIM, CHAR_EMBEDDING_DIM, WORD_HIDDEN_DIM, CHAR_HIDDEN_DIM, len(transform.word_to_ix), CHARSET_SIZE, len(transform.cls_to_ix))
+    model = LSTMClassifier(WORD_EMBEDDING_DIM, CHAR_EMBEDDING_DIM, WORD_HIDDEN_DIM, CHAR_HIDDEN_DIM, len(vectorize.word_to_ix) + 1, CHARSET_SIZE, len(vectorize.cls_to_ix), BATCH_SIZE)
     loss_function = nn.NLLLoss()
     optimizer = optim.SGD(model.parameters(), lr=0.1)
 
