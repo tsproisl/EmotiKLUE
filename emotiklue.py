@@ -45,7 +45,7 @@ class IESTDataset(torch.utils.data.Dataset):
         self.cls_tensor = torch.LongTensor(tgt)
 
     def __len__(self):
-        return len(self.data)
+        return self.cls_tensor.size(0)
 
     def __getitem__(self, idx):
         return self.lw_tensor[idx], self.rw_tensor[idx], self.lc_tensor[idx], self.rc_tensor[idx], self.cls_tensor[idx]
@@ -337,8 +337,9 @@ def main():
 
     # train and validation datasets
     train_dataset = IESTDataset(args.train)
-    transform = train_dataset.transform
-    val_dataset = IESTDataset(args.val, transform=transform)
+    print(len(train_dataset))
+    vectorize = train_dataset.vectorize
+    val_dataset = IESTDataset(args.val, vectorize=vectorize)
     # CUDA: pin_memory=True?
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
