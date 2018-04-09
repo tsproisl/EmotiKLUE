@@ -26,7 +26,7 @@ class IESTDataset(torch.utils.data.Dataset):
         vocabulary, classes = set(), set()
         with open(filename, encoding="utf8") as fh:
             for line in fh:
-                line = unicodedata.normalize("NFC", line)
+                line = unicodedata.normalize("NFD", line)
                 cls, text = line.strip().split("\t")
                 left_str, right_str = text.strip().split("[#TRIGGERWORD#]")
                 left_words = left_str.strip().split()
