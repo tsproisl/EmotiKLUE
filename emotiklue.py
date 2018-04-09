@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data
+import torch.nn.utils.rnn
 
 # https://github.com/ngarneau/understanding-pytorch-batching-lstm/blob/master/Understanding%20Pytorch%20Batching.ipynb
 # https://discuss.pytorch.org/t/solved-multiple-packedsequence-input-ordering/2106/4
@@ -26,11 +27,15 @@ class IESTDataset(torch.utils.data.Dataset):
         vocabulary, classes = set(), set()
         with open(filename, encoding="utf8") as fh:
             for line in fh:
+                if "[#TRIGGERWORD#]" not in line:
+                    continue
                 line = unicodedata.normalize("NFD", line)
                 cls, text = line.strip().split("\t")
                 left_str, right_str = text.strip().split("[#TRIGGERWORD#]")
                 left_words = left_str.strip().split()
                 right_words = right_str.strip().split()
+                if left_str.strip() == "" or right_str.strip() == "":
+                    continue
                 vocabulary.update(set(itertools.chain(left_words, right_words)))
                 classes.add(cls)
                 data.append((left_words, right_words, left_str, right_str, cls))
@@ -38,18 +43,18 @@ class IESTDataset(torch.utils.data.Dataset):
             self.vectorize = Vectorizer(vocabulary, classes)
         data = [self.vectorize(sample) for sample in data]
         lw, rw, lc, rc, tgt = zip(*data)
-        lw_lengths, rw_lengths, lc_lengths, rc_lengths = [torch.LongTensor([len(s) for s in x]) for x in (lw, rw, lc, rc)]
-        self.lw_tensor = pad_sequences(lw, lw_lengths)
-        self.rw_tensor = pad_sequences(rw, rw_lengths)
-        self.lc_tensor = pad_sequences(lc, lc_lengths)
-        self.rc_tensor = pad_sequences(rc, rc_lengths)
+        self.lw_lengths, self.rw_lengths, self.lc_lengths, self.rc_lengths = [torch.LongTensor([len(s) for s in x]) for x in (lw, rw, lc, rc)]
+        self.lw_tensor = pad_sequences(lw, self.lw_lengths)
+        self.rw_tensor = pad_sequences(rw, self.rw_lengths)
+        self.lc_tensor = pad_sequences(lc, self.lc_lengths)
+        self.rc_tensor = pad_sequences(rc, self.rc_lengths)
         self.cls_tensor = torch.LongTensor(tgt)
 
     def __len__(self):
         return self.cls_tensor.size(0)
 
     def __getitem__(self, idx):
-        return self.lw_tensor[idx], self.rw_tensor[idx], self.lc_tensor[idx], self.rc_tensor[idx], self.cls_tensor[idx]
+        return self.lw_tensor[idx], self.rw_tensor[idx], self.lc_tensor[idx], self.rc_tensor[idx], self.lw_lengths[idx], self.rw_lengths[idx], self.lc_lengths[idx], self.rc_lengths[idx], self.cls_tensor[idx]
 
 
 class Vectorizer(object):
@@ -143,24 +148,50 @@ class LSTMClassifier(nn.Module):
         return (autograd.Variable(torch.zeros(1, self.batch_size, dim)),
                 autograd.Variable(torch.zeros(1, self.batch_size, dim)))
 
-    def forward(self, left_words, right_words, left_chars, right_chars):
-        left_len_chars = len(left_chars)
-        left_len_words = len(left_words)
-        left_char_embeds = self.char_embeddings(left_chars)
-        left_word_embeds = self.word_embeddings(left_words)
-        print(left_char_embeds.size())
-        print(left_len_chars)
-        left_char_lstm_out, self.left_char_hidden = self.left_char_lstm(left_char_embeds.view(left_len_chars, 1, -1), self.left_char_hidden)
-        left_word_lstm_out, self.left_word_hidden = self.left_word_lstm(left_word_embeds.view(left_len_words, 1, -1), self.left_word_hidden)
+    def _lstm(self, sequence, lengths, embedding, lstm, hidden):
+        seq_lengths, perm_idx = lengths.sort(0, descending=True)
+        # print(lengths > 0)
+        # print(lengths[lengths > 0])
+        # print(sequence)
+        # print(sequence.size())
+        # print((lengths > 0).size())
+        # print(sequence[[i for i, l in enumerate(lengths) if l > 0]])
+        seq_tensor = sequence[perm_idx].transpose(0, 1)
+        length = len(seq_tensor)
+        embeds = embedding(seq_tensor)
+        packed_input = torch.nn.utils.rnn.pack_padded_sequence(embeds, list(seq_lengths))
+        packed_output, hidden = lstm(packed_input, hidden)
+        lstm_out, out_lengths = torch.nn.utils.rnn.pad_packed_sequence(packed_output)
+        lstm_out = lstm_out.transpose(0, 1)
+        
+        # restore the sorting
+        _, perm_perm_idx = perm_idx.sort(0, descending=False)
+        odx = perm_perm_idx.view(-1, 1).unsqueeze(1).expand(lstm_out.size(0), lstm_out.size(1), lstm_out.size(2))
+        decoded = lstm_out.gather(0, autograd.Variable(odx))
+        return lstm_out.transpose(0, 1)[-1]
 
-        right_len_chars = len(right_chars)
-        right_len_words = len(right_words)
-        right_char_embeds = self.char_embeddings(right_chars)
-        right_word_embeds = self.word_embeddings(right_words)
-        right_char_lstm_out, self.right_char_hidden = self.right_char_lstm(right_char_embeds.view(right_len_chars, 1, -1), self.right_char_hidden)
-        right_word_lstm_out, self.right_word_hidden = self.right_word_lstm(right_word_embeds.view(right_len_words, 1, -1), self.right_word_hidden)
+    def forward(self, left_words, right_words, left_chars, right_chars, lw_lengths, rw_lengths, lc_lengths, rc_lengths):
+        # left_len_chars = len(left_chars)
+        # left_len_words = len(left_words)
+        # left_char_embeds = self.char_embeddings(left_chars)
+        # left_word_embeds = self.word_embeddings(left_words)
+        # print(left_char_embeds.size())
+        # print(left_len_chars)
+        # left_char_lstm_out, self.left_char_hidden = self.left_char_lstm(left_char_embeds.view(left_len_chars, 1, -1), self.left_char_hidden)
+        # left_word_lstm_out, self.left_word_hidden = self.left_word_lstm(left_word_embeds.view(left_len_words, 1, -1), self.left_word_hidden)
 
-        context = torch.cat((left_word_lstm_out[-1], right_word_lstm_out[-1], left_char_lstm_out[-1], right_char_lstm_out[-1]), dim=1)
+        # right_len_chars = len(right_chars)
+        # right_len_words = len(right_words)
+        # right_char_embeds = self.char_embeddings(right_chars)
+        # right_word_embeds = self.word_embeddings(right_words)
+        # right_char_lstm_out, self.right_char_hidden = self.right_char_lstm(right_char_embeds.view(right_len_chars, 1, -1), self.right_char_hidden)
+        # right_word_lstm_out, self.right_word_hidden = self.right_word_lstm(right_word_embeds.view(right_len_words, 1, -1), self.right_word_hidden)
+        left_char_lstm_out = self._lstm(left_chars, lc_lengths, self.char_embeddings, self.left_char_lstm, self.left_char_hidden)
+        left_word_lstm_out = self._lstm(left_words, lw_lengths, self.word_embeddings, self.left_word_lstm, self.left_word_hidden)
+        right_char_lstm_out = self._lstm(right_chars, rc_lengths, self.char_embeddings, self.right_char_lstm, self.right_char_hidden)
+        right_word_lstm_out = self._lstm(right_words, rw_lengths, self.word_embeddings, self.right_word_lstm, self.right_word_hidden)
+        
+        context = torch.cat((left_word_lstm_out, right_word_lstm_out, left_char_lstm_out, right_char_lstm_out), dim=1)
         dropout = self.dropout(context)
         class_space = self.hidden2class(dropout)
         class_scores = F.log_softmax(class_space, dim=1)
@@ -198,7 +229,7 @@ def accuracy(output, target, topk=(1,)):
 
     _, pred = output.topk(maxk, 1, True, True)
     pred = pred.t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
+    correct = torch.eq(pred, target.view(1, -1).expand_as(pred))
 
     res = []
     for k in topk:
@@ -216,7 +247,8 @@ def pad_sequences(seqs, seq_lengths):
     """
     seq_tensor = torch.zeros((len(seqs), seq_lengths.max())).long()
     for idx, (seq, seq_len) in enumerate(zip(seqs, seq_lengths)):
-        seq_tensor[idx, :seq_len] = torch.LongTensor(seq)
+        if seq_len != 0:
+            seq_tensor[idx, :seq_len] = torch.LongTensor(seq)
     return seq_tensor
 
 
@@ -245,20 +277,15 @@ def train(train_loader, model, loss_function, optimizer, epoch, print_freq=1):
     model.train()
 
     timestamp = time.time()
-    for i, (left_words, right_words, left_chars, right_chars, cls) in enumerate(train_loader):
+    for i, (left_words, right_words, left_chars, right_chars, lw_lengths, rw_lengths, lc_lengths, rc_lengths, cls) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - timestamp)
-
-        print("left_words:", left_words)
 
         left_words = autograd.Variable(left_words)
         right_words = autograd.Variable(right_words)
         left_chars = autograd.Variable(left_chars)
         right_chars = autograd.Variable(right_chars)
-        cls = autograd.Variable(cls)
-
-        print("left_words.size():", left_words.size())
-        # left_words.size() == batch size?
+        cls_var = autograd.Variable(cls)
 
         # Pytorch accumulates gradients. We need to clear them out
         # before each instance
@@ -272,8 +299,8 @@ def train(train_loader, model, loss_function, optimizer, epoch, print_freq=1):
         model.right_word_hidden = model.init_hidden(model.word_hidden_dim)
 
         # Run forward pass and compute loss
-        cls_scores = model(left_words, right_words, left_chars, right_chars)
-        loss = loss_function(cls_scores, cls)
+        cls_scores = model(left_words, right_words, left_chars, right_chars, lw_lengths, rw_lengths, lc_lengths, rc_lengths)
+        loss = loss_function(cls_scores, cls_var)
 
         # measure accuracy and record loss
         prec1, prec3 = accuracy(cls_scores.data, cls, topk=(1, 3))
@@ -311,11 +338,17 @@ def validate(val_loader, model, loss_function, print_freq=1):
     model.eval()
 
     timestamp = time.time()
-    for i, (left_words, right_words, left_chars, right_chars, cls) in enumerate(val_loader):
+    for i, (left_words, right_words, left_chars, right_chars, lw_lengths, rw_lengths, lc_lengths, rc_lengths, cls) in enumerate(val_loader):
+
+        left_words = autograd.Variable(left_words, volatile=True)
+        right_words = autograd.Variable(right_words, volatile=True)
+        left_chars = autograd.Variable(left_chars, volatile=True)
+        right_chars = autograd.Variable(right_chars, volatile=True)
+        cls_var = autograd.Variable(cls, volatile=True)
 
         # compute output and loss
-        cls_scores = model(left_words, right_words, left_chars, right_chars)
-        loss = loss_function(cls_scores, cls)
+        cls_scores = model(left_words, right_words, left_chars, right_chars, lw_lengths, rw_lengths, lc_lengths, rc_lengths)
+        loss = loss_function(cls_scores, cls_var)
 
         # measure accuracy and record loss
         prec1, prec3 = accuracy(cls_scores.data, cls, topk=(1, 3))
@@ -332,7 +365,7 @@ def validate(val_loader, model, loss_function, print_freq=1):
                   "Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t"
                   "Loss {loss.val:.4f} ({loss.avg:.4f})\t"
                   "Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t"
-                  "Prec@3 {top3.val:.3f} ({top5.avg:.3f})".format(
+                  "Prec@3 {top3.val:.3f} ({top3.avg:.3f})".format(
                       i, len(val_loader), batch_time=batch_time, loss=losses,
                       top1=top1, top3=top3))
 
@@ -368,8 +401,8 @@ def main():
 
     for epoch in range(EPOCHS):
         print(epoch)
-        train(train_loader, model, loss_function, optimizer, epoch)
-        prec1 = validate(val_loader, model, loss_function)
+        train(train_loader, model, loss_function, optimizer, epoch, print_freq=1000)
+        prec1 = validate(val_loader, model, loss_function, print_freq=1000)
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
         save_checkpoint({
