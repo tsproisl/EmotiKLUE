@@ -2,12 +2,13 @@
 
 import argparse
 import itertools
+import json
 import os
 import unicodedata
 
-import keras.preprocessing.sequence
-import keras.models
 import keras.layers
+import keras.models
+import keras.preprocessing.sequence
 import keras.utils
 
 
@@ -23,8 +24,6 @@ def read_dataset(filename):
             left_str, right_str = text.strip().split("[#TRIGGERWORD#]")
             left_words = left_str.strip().split()
             right_words = right_str.strip().split()
-            # if left_str.strip() == "" or right_str.strip() == "":
-            #     continue
             vocabulary.update(set(itertools.chain(left_words, right_words)))
             classes.add(cls)
             data.append((left_words, right_words, left_str, right_str, cls))
@@ -47,13 +46,13 @@ def vectorize_words(sequence, mapping, reverse=False):
 
 def arguments():
     parser = argparse.ArgumentParser("EmotiKLUE")
+    parser.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
     parser.add_argument("--train", type=os.path.abspath, required=True, help="Dataset for training")
-    # parser.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
+    parser.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
     return parser.parse_args()
 
 
 def main():
-
     WORD_EMBEDDING_DIM = 128
     CHAR_EMBEDDING_DIM = 16
     WORD_LSTM_DIM = 128
@@ -66,6 +65,7 @@ def main():
 
     args = arguments()
     train_lw, train_rw, train_lc, train_rc, train_tgt, vocabulary, classes = read_dataset(args.train)
+    val_lw, val_rw, val_lc, val_rc, val_tgt, _, _ = read_dataset(args.val)
 
     # mappings
     word_to_idx = {w: i for i, w in enumerate(sorted(vocabulary), start=1)}
@@ -79,23 +79,33 @@ def main():
     train_rc = [vectorize_characters(rc, reverse=True) for rc in train_rc]
     train_tgt = vectorize_words(train_tgt, tgt_to_idx)
     targets = keras.utils.to_categorical(train_tgt, num_classes=len(classes))
+    val_lw = [vectorize_words(lw, word_to_idx) for lw in val_lw]
+    val_rw = [vectorize_words(rw, word_to_idx, reverse=True) for rw in val_rw]
+    val_lc = [vectorize_characters(lc) for lc in val_lc]
+    val_rc = [vectorize_characters(rc, reverse=True) for rc in val_rc]
+    val_tgt = vectorize_words(val_tgt, tgt_to_idx)
+    val_targets = keras.utils.to_categorical(val_tgt, num_classes=len(classes))
 
     # pad sequences
-    max_len_lw = max((len(lw) for lw in train_lw))
-    max_len_rw = max((len(rw) for rw in train_rw))
-    max_len_lc = max((len(lc) for lc in train_lc))
-    max_len_rc = max((len(rc) for rc in train_rc))
+    max_len_lw = int(max((len(lw) for lw in itertools.chain(train_lw, val_lw))) * 1.1)
+    max_len_rw = int(max((len(rw) for rw in itertools.chain(train_rw, val_rw))) * 1.1)
+    max_len_lc = int(max((len(lc) for lc in itertools.chain(train_lc, val_lc))) * 1.1)
+    max_len_rc = int(max((len(rc) for rc in itertools.chain(train_rc, val_rc))) * 1.1)
 
-    left_words = keras.preprocessing.sequence.pad_sequences(train_lw, maxlen=int(max_len_lw * 1.1), padding="pre", truncating="pre")
-    right_words = keras.preprocessing.sequence.pad_sequences(train_rw, maxlen=int(max_len_rw * 1.1), padding="pre", truncating="pre")
-    left_chars = keras.preprocessing.sequence.pad_sequences(train_lc, maxlen=int(max_len_lc * 1.1), padding="pre", truncating="pre")
-    right_chars = keras.preprocessing.sequence.pad_sequences(train_rc, maxlen=int(max_len_rc * 1.1), padding="pre", truncating="pre")
+    train_left_words = keras.preprocessing.sequence.pad_sequences(train_lw, maxlen=max_len_lw, padding="pre", truncating="pre")
+    train_right_words = keras.preprocessing.sequence.pad_sequences(train_rw, maxlen=max_len_rw, padding="pre", truncating="pre")
+    train_left_chars = keras.preprocessing.sequence.pad_sequences(train_lc, maxlen=max_len_lc, padding="pre", truncating="pre")
+    train_right_chars = keras.preprocessing.sequence.pad_sequences(train_rc, maxlen=max_len_rc, padding="pre", truncating="pre")
+    val_left_words = keras.preprocessing.sequence.pad_sequences(val_lw, maxlen=max_len_lw, padding="pre", truncating="pre")
+    val_right_words = keras.preprocessing.sequence.pad_sequences(val_rw, maxlen=max_len_rw, padding="pre", truncating="pre")
+    val_left_chars = keras.preprocessing.sequence.pad_sequences(val_lc, maxlen=max_len_lc, padding="pre", truncating="pre")
+    val_right_chars = keras.preprocessing.sequence.pad_sequences(val_rc, maxlen=max_len_rc, padding="pre", truncating="pre")
 
     # input layers
-    input_lw = keras.layers.Input(shape=(left_words.shape[1],))
-    input_rw = keras.layers.Input(shape=(right_words.shape[1],))
-    input_lc = keras.layers.Input(shape=(left_chars.shape[1],))
-    input_rc = keras.layers.Input(shape=(right_chars.shape[1],))
+    input_lw = keras.layers.Input(shape=(train_left_words.shape[1],))
+    input_rw = keras.layers.Input(shape=(train_right_words.shape[1],))
+    input_lc = keras.layers.Input(shape=(train_left_chars.shape[1],))
+    input_rc = keras.layers.Input(shape=(train_right_chars.shape[1],))
 
     # embedding layers
     embedding_lw = keras.layers.Embedding(len(vocabulary) + 1, WORD_EMBEDDING_DIM, mask_zero=True)(input_lw)
@@ -110,16 +120,19 @@ def main():
     lstm_rc = keras.layers.LSTM(CHAR_LSTM_DIM, dropout=DROPOUT, recurrent_dropout=RECURRENT_DROPOUT)(embedding_rc)
 
     # concatenate
-    all_features = keras.layers.Concatenate(axis=1)([lstm_lw, lstm_rw, lstm_lc, lstm_rc])
+    lstm_out = keras.layers.Concatenate(axis=1)([lstm_lw, lstm_rw, lstm_lc, lstm_rc])
 
     # dense layers
-    dense = keras.layers.Dense(DENSE_DIM)(all_features)
+    dense = keras.layers.Dense(DENSE_DIM)(lstm_out)
     predictions = keras.layers.Dense(len(classes), activation="sigmoid")(dense)
 
     model = keras.models.Model(inputs=[input_lw, input_rw, input_lc, input_rc], outputs=predictions)
     model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
-    model.fit([left_words, right_words, left_chars, right_chars], targets, batch_size=BATCH_SIZE, epochs=EPOCHS, validation_split=0.1)
-    # model.fit([left_words, right_words, left_chars, right_chars], targets, batch_size=4, epochs=10)
+    model.fit([train_left_words, train_right_words, train_left_chars, train_right_chars], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
+              validation_data=([val_left_words, val_right_words, val_left_chars, val_right_chars], val_targets))
+    model.save("%s.h5" % args.model)
+    with open("%s.maps" % args.model) as f:
+        json.dump((word_to_idx, tgt_to_idx), f)
 
 
 if __name__ == "__main__":
