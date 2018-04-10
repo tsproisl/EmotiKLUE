@@ -108,8 +108,8 @@ def main():
     input_rc = keras.layers.Input(shape=(train_right_chars.shape[1],))
 
     # embedding layers
-    embedding_lw = keras.layers.Embedding(len(vocabulary) + 1, WORD_EMBEDDING_DIM, mask_zero=True)(input_lw)
-    embedding_rw = keras.layers.Embedding(len(vocabulary) + 1, WORD_EMBEDDING_DIM, mask_zero=True)(input_rw)
+    embedding_lw = keras.layers.Embedding(len(vocabulary) + 2, WORD_EMBEDDING_DIM, mask_zero=True)(input_lw)
+    embedding_rw = keras.layers.Embedding(len(vocabulary) + 2, WORD_EMBEDDING_DIM, mask_zero=True)(input_rw)
     embedding_lc = keras.layers.Embedding(256, CHAR_EMBEDDING_DIM, mask_zero=True)(input_lc)
     embedding_rc = keras.layers.Embedding(256, CHAR_EMBEDDING_DIM, mask_zero=True)(input_rc)
 
