@@ -3,14 +3,13 @@
 import argparse
 import itertools
 import os
-import shutil
-import time
 import unicodedata
 
 import keras.preprocessing.sequence
 import keras.models
 import keras.layers
 import keras.utils
+
 
 def read_dataset(filename):
     data = []
@@ -59,12 +58,12 @@ def main():
     CHAR_EMBEDDING_DIM = 16
     WORD_LSTM_DIM = 128
     CHAR_LSTM_DIM = 16
-    DENSE_DIM = 144
+    DENSE_DIM = WORD_LSTM_DIM + CHAR_LSTM_DIM
     DROPOUT = 0.1
     RECURRENT_DROPOUT = 0.1
     BATCH_SIZE = 10
     EPOCHS = 10
-    
+
     args = arguments()
     train_lw, train_rw, train_lc, train_rc, train_tgt, vocabulary, classes = read_dataset(args.train)
 
@@ -80,7 +79,7 @@ def main():
     train_rc = [vectorize_characters(rc, reverse=True) for rc in train_rc]
     train_tgt = vectorize_words(train_tgt, tgt_to_idx)
     targets = keras.utils.to_categorical(train_tgt, num_classes=len(classes))
-    
+
     # pad sequences
     max_len_lw = max((len(lw) for lw in train_lw))
     max_len_rw = max((len(rw) for rw in train_rw))
@@ -112,9 +111,10 @@ def main():
 
     # concatenate
     all_features = keras.layers.Concatenate(axis=1)([lstm_lw, lstm_rw, lstm_lc, lstm_rc])
-    
-    # dense layer
-    predictions = keras.layers.Dense(len(classes), activation="sigmoid")(all_features)
+
+    # dense layers
+    dense = keras.layers.Dense(DENSE_DIM)(all_features)
+    predictions = keras.layers.Dense(len(classes), activation="sigmoid")(dense)
 
     model = keras.models.Model(inputs=[input_lw, input_rw, input_lc, input_rc], outputs=predictions)
     model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
