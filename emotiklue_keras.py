@@ -131,7 +131,7 @@ def main():
     model.fit([train_left_words, train_right_words, train_left_chars, train_right_chars], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
               validation_data=([val_left_words, val_right_words, val_left_chars, val_right_chars], val_targets))
     model.save("%s.h5" % args.model)
-    with open("%s.maps" % args.model) as f:
+    with open("%s.maps" % args.model, mode="w") as f:
         json.dump((word_to_idx, tgt_to_idx), f)
 
 
