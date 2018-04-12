@@ -10,6 +10,7 @@ import keras.layers
 import keras.models
 import keras.preprocessing.sequence
 import keras.utils
+import tensorflow as tf
 
 
 def read_dataset(filename):
@@ -49,6 +50,7 @@ def arguments():
     parser.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
     parser.add_argument("--train", type=os.path.abspath, required=True, help="Dataset for training")
     parser.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
+    parser.add_argument("--gpu", type=int, default=0, help="Number of GPUs to use")
     return parser.parse_args()
 
 
@@ -126,10 +128,17 @@ def main():
     dense = keras.layers.Dense(DENSE_DIM)(lstm_out)
     predictions = keras.layers.Dense(len(classes), activation="sigmoid")(dense)
 
-    model = keras.models.Model(inputs=[input_lw, input_rw, input_lc, input_rc], outputs=predictions)
-    model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
-    model.fit([train_left_words, train_right_words, train_left_chars, train_right_chars], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
-              validation_data=([val_left_words, val_right_words, val_left_chars, val_right_chars], val_targets))
+    with tf.device('/cpu:0'):
+        model = keras.models.Model(inputs=[input_lw, input_rw, input_lc, input_rc], outputs=predictions)
+    if args.gpu > 0:
+        parallel_model = keras.utils.multi_gpu_model(model, gpus=args.gpu)
+        parallel_model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+        parallel_model.fit([train_left_words, train_right_words, train_left_chars, train_right_chars], targets, batch_size=BATCH_SIZE * args.gpu, epochs=EPOCHS,
+                           validation_data=([val_left_words, val_right_words, val_left_chars, val_right_chars], val_targets))
+    else:
+        model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+        model.fit([train_left_words, train_right_words, train_left_chars, train_right_chars], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
+                  validation_data=([val_left_words, val_right_words, val_left_chars, val_right_chars], val_targets))
     model.save("%s.h5" % args.model)
     with open("%s.maps" % args.model, mode="w") as f:
         json.dump((word_to_idx, tgt_to_idx), f)
