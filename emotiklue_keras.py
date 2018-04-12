@@ -62,7 +62,7 @@ def main():
     DENSE_DIM = WORD_LSTM_DIM + CHAR_LSTM_DIM
     DROPOUT = 0.1
     RECURRENT_DROPOUT = 0.1
-    BATCH_SIZE = 16
+    BATCH_SIZE = 160
     EPOCHS = 10
 
     args = arguments()
@@ -130,7 +130,7 @@ def main():
 
     with tf.device('/cpu:0'):
         model = keras.models.Model(inputs=[input_lw, input_rw, input_lc, input_rc], outputs=predictions)
-    if args.gpu > 0:
+    if args.gpu > 1:
         parallel_model = keras.utils.multi_gpu_model(model, gpus=args.gpu)
         parallel_model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
         parallel_model.fit([train_left_words, train_right_words, train_left_chars, train_right_chars], targets, batch_size=BATCH_SIZE * args.gpu, epochs=EPOCHS,
