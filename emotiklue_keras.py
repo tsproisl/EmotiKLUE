@@ -60,7 +60,7 @@ def main():
     DENSE_DIM = WORD_LSTM_DIM + CHAR_LSTM_DIM
     DROPOUT = 0.1
     RECURRENT_DROPOUT = 0.1
-    BATCH_SIZE = 10
+    BATCH_SIZE = 16
     EPOCHS = 10
 
     args = arguments()
