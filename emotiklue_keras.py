@@ -125,8 +125,9 @@ def main():
     lstm_out = keras.layers.Concatenate(axis=1)([lstm_lw, lstm_rw, lstm_lc, lstm_rc])
 
     # dense layers
-    dense = keras.layers.Dense(DENSE_DIM)(lstm_out)
-    predictions = keras.layers.Dense(len(classes), activation="sigmoid")(dense)
+    dense01 = keras.layers.Dense(DENSE_DIM, activation="tanh")(lstm_out)
+    # dense02 = keras.layers.Dense(DENSE_DIM // 2, activation="tanh")(dense01)
+    predictions = keras.layers.Dense(len(classes), activation="softmax")(dense01)
 
     with tf.device('/cpu:0'):
         model = keras.models.Model(inputs=[input_lw, input_rw, input_lc, input_rc], outputs=predictions)
