@@ -24,7 +24,10 @@ def read_train_data(filename):
     with open(filename, encoding="utf8") as fh:
         for line in fh:
             l, d = line.strip().split("\t")
-            data.append(d)
+            d = re.sub(r"\[#TRIGGERWORD#\]", "", d)
+            words = re.findall(r"\w+", d.lower().strip())
+            text = " ".join(words)
+            data.append(text)
             labels.append(l)
     return data, labels
 
@@ -63,8 +66,8 @@ def bow_baseline_naive_bayes(train_data, train_labels, test_data, test_labels):
 def tfidf_baseline_naive_bayes(train_data, train_labels, test_data, test_labels):
     clf = sklearn.naive_bayes.MultinomialNB()
     cv = sklearn.feature_extraction.text.TfidfVectorizer()
-    train_data = strip_triggerword(train_data)
-    test_data = strip_triggerword(test_data)
+    # train_data = strip_triggerword(train_data)
+    # test_data = strip_triggerword(test_data)
     train = cv.fit_transform(train_data)
     test = cv.transform(test_data)
     clf.fit(train, train_labels)
@@ -77,8 +80,8 @@ def bow_baseline_svm(train_data, train_labels, test_data, test_labels):
     cv = sklearn.feature_extraction.text.CountVectorizer()
     clf = sklearn.svm.LinearSVC()
     # scaler = sklearn.preprocessing.StandardScaler(with_mean=False)
-    train_data = strip_triggerword(train_data)
-    test_data = strip_triggerword(test_data)
+    # train_data = strip_triggerword(train_data)
+    # test_data = strip_triggerword(test_data)
     train = cv.fit_transform(train_data)
     # train = scaler.fit_transform(train)
     test = cv.transform(test_data)
@@ -93,8 +96,8 @@ def tfidf_baseline_svm(train_data, train_labels, test_data, test_labels):
     cv = sklearn.feature_extraction.text.TfidfVectorizer()
     clf = sklearn.svm.LinearSVC()
     # scaler = sklearn.preprocessing.StandardScaler(with_mean=False)
-    train_data = strip_triggerword(train_data)
-    test_data = strip_triggerword(test_data)
+    # train_data = strip_triggerword(train_data)
+    # test_data = strip_triggerword(test_data)
     train = cv.fit_transform(train_data)
     # train = scaler.fit_transform(train)
     test = cv.transform(test_data)
