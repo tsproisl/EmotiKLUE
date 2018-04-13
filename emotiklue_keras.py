@@ -3,9 +3,12 @@
 import argparse
 import itertools
 import json
+import gzip
 import os
+import re
 import unicodedata
 
+import numpy as np
 import keras.layers
 import keras.models
 import keras.preprocessing.sequence
@@ -23,13 +26,28 @@ def read_dataset(filename):
             line = unicodedata.normalize("NFD", line)
             cls, text = line.strip().split("\t")
             left_str, right_str = text.strip().split("[#TRIGGERWORD#]")
-            left_words = left_str.strip().split()
-            right_words = right_str.strip().split()
+            left_str = left_str.lower()
+            right_str = right_str.lower()
+            # left_words = left_str.strip().split()
+            # right_words = right_str.strip().split()
+            left_words = re.findall(r"\w+", left_str)
+            right_words = re.findall(r"\w+", right_str)
             vocabulary.update(set(itertools.chain(left_words, right_words)))
             classes.add(cls)
             data.append((left_words, right_words, left_str, right_str, cls))
     lw, rw, lc, rc, tgt = zip(*data)
     return lw, rw, lc, rc, tgt, vocabulary, classes
+
+
+def read_glove(filename):
+    embeddings_index = {}
+    with gzip.open(filename, mode="rt", encoding="utf8") as fh:
+        for line in fh:
+            values = line.strip().split()
+            word = values[0]
+            coefs = np.asarray(values[1:], dtype='float32')
+            embeddings_index[word] = coefs
+    return embeddings_index
 
 
 def vectorize_characters(sequence, reverse=False):
@@ -50,15 +68,16 @@ def arguments():
     parser.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
     parser.add_argument("--train", type=os.path.abspath, required=True, help="Dataset for training")
     parser.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
+    parser.add_argument("--embeddings", type=os.path.abspath, required=True, help="Word embeddings")
     parser.add_argument("--gpu", type=int, default=0, help="Number of GPUs to use")
     return parser.parse_args()
 
 
 def main():
-    WORD_EMBEDDING_DIM = 128
+    WORD_EMBEDDING_DIM = 100
     CHAR_EMBEDDING_DIM = 16
-    WORD_LSTM_DIM = 128
-    CHAR_LSTM_DIM = 16
+    WORD_LSTM_DIM = WORD_EMBEDDING_DIM
+    CHAR_LSTM_DIM = CHAR_EMBEDDING_DIM
     DENSE_DIM = WORD_LSTM_DIM + CHAR_LSTM_DIM
     DROPOUT = 0.1
     RECURRENT_DROPOUT = 0.1
@@ -68,11 +87,20 @@ def main():
     args = arguments()
     train_lw, train_rw, train_lc, train_rc, train_tgt, vocabulary, classes = read_dataset(args.train)
     val_lw, val_rw, val_lc, val_rc, val_tgt, _, _ = read_dataset(args.val)
+    embeddings_index = read_glove(args.embeddings)
 
     # mappings
     word_to_idx = {w: i for i, w in enumerate(sorted(vocabulary), start=1)}
     tgt_to_idx = {c: i for i, c in enumerate(sorted(classes), start=0)}
     idx_to_tgt = {i: c for c, i in tgt_to_idx.items()}
+
+    # create embedding layers
+    embedding_matrix = np.zeros((len(vocabulary) + 2, WORD_EMBEDDING_DIM))
+    for word, idx in word_to_idx.items():
+        embedding_vector = embeddings_index.get(word)
+        if embedding_vector is not None:
+            # words not found in embedding index will be all-zeros.
+            embedding_matrix[idx] = embedding_vector
 
     # vectorize
     train_lw = [vectorize_words(lw, word_to_idx) for lw in train_lw]
@@ -110,8 +138,8 @@ def main():
     input_rc = keras.layers.Input(shape=(train_right_chars.shape[1],))
 
     # embedding layers
-    embedding_lw = keras.layers.Embedding(len(vocabulary) + 2, WORD_EMBEDDING_DIM, mask_zero=True)(input_lw)
-    embedding_rw = keras.layers.Embedding(len(vocabulary) + 2, WORD_EMBEDDING_DIM, mask_zero=True)(input_rw)
+    embedding_lw = keras.layers.Embedding(len(vocabulary) + 2, WORD_EMBEDDING_DIM, mask_zero=True, weights=[embedding_matrix], trainable=False)(input_lw)
+    embedding_rw = keras.layers.Embedding(len(vocabulary) + 2, WORD_EMBEDDING_DIM, mask_zero=True, weights=[embedding_matrix], trainable=False)(input_rw)
     embedding_lc = keras.layers.Embedding(256, CHAR_EMBEDDING_DIM, mask_zero=True)(input_lc)
     embedding_rc = keras.layers.Embedding(256, CHAR_EMBEDDING_DIM, mask_zero=True)(input_rc)
 
