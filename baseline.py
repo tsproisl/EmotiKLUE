@@ -108,6 +108,38 @@ def tfidf_baseline_svm(train_data, train_labels, test_data, test_labels):
     evaluate_iest.calculatePRF(test_labels, pred.tolist())
 
 
+def bigrams_svm(train_data, train_labels, test_data, test_labels):
+    cv = sklearn.feature_extraction.text.CountVectorizer(ngram_range=(1, 2))
+    clf = sklearn.svm.LinearSVC()
+    # scaler = sklearn.preprocessing.StandardScaler(with_mean=False)
+    # train_data = strip_triggerword(train_data)
+    # test_data = strip_triggerword(test_data)
+    train = cv.fit_transform(train_data)
+    # train = scaler.fit_transform(train)
+    test = cv.transform(test_data)
+    # test = scaler.transform(test)
+    clf.fit(train, train_labels)
+    pred = clf.predict(test)
+    print("\n## Bag of uni- and bigrams (Linear SVC) ##\n")
+    evaluate_iest.calculatePRF(test_labels, pred.tolist())
+
+
+def tfidf_bigrams_svm(train_data, train_labels, test_data, test_labels):
+    cv = sklearn.feature_extraction.text.TfidfVectorizer(ngram_range=(1, 2))
+    clf = sklearn.svm.LinearSVC()
+    # scaler = sklearn.preprocessing.StandardScaler(with_mean=False)
+    # train_data = strip_triggerword(train_data)
+    # test_data = strip_triggerword(test_data)
+    train = cv.fit_transform(train_data)
+    # train = scaler.fit_transform(train)
+    test = cv.transform(test_data)
+    # test = scaler.transform(test)
+    clf.fit(train, train_labels)
+    pred = clf.predict(test)
+    print("\n## Bag of uni- and bigrams tf-idf (Linear SVC) ##\n")
+    evaluate_iest.calculatePRF(test_labels, pred.tolist())
+
+
 def main():
     args = arguments()
     train_data, train_labels = read_train_data(os.path.join(args.datadir, "train.csv"))
@@ -119,6 +151,8 @@ def main():
     tfidf_baseline_naive_bayes(train_data, train_labels, trial_data, trial_labels)
     bow_baseline_svm(train_data, train_labels, trial_data, trial_labels)
     tfidf_baseline_svm(train_data, train_labels, trial_data, trial_labels)
+    bigrams_svm(train_data, train_labels, trial_data, trial_labels)
+    tfidf_bigrams_svm(train_data, train_labels, trial_data, trial_labels)
 
 
 if __name__ == "__main__":
