@@ -78,9 +78,11 @@ def main():
     CHAR_EMBEDDING_DIM = 16
     WORD_LSTM_DIM = WORD_EMBEDDING_DIM
     CHAR_LSTM_DIM = CHAR_EMBEDDING_DIM
+    # TEST
     DENSE_DIM = WORD_LSTM_DIM + CHAR_LSTM_DIM
-    DROPOUT = 0.1
-    RECURRENT_DROPOUT = 0.1
+    # DENSE_DIM = WORD_LSTM_DIM
+    DROPOUT = 0.2
+    RECURRENT_DROPOUT = 0.0
     BATCH_SIZE = 160
     EPOCHS = 10
 
@@ -150,15 +152,20 @@ def main():
     lstm_rc = keras.layers.LSTM(CHAR_LSTM_DIM, dropout=DROPOUT, recurrent_dropout=RECURRENT_DROPOUT)(embedding_rc)
 
     # concatenate
+    # TEST
     lstm_out = keras.layers.Concatenate(axis=1)([lstm_lw, lstm_rw, lstm_lc, lstm_rc])
+    # lstm_out = keras.layers.Concatenate(axis=1)([lstm_lw, lstm_rw])
 
     # dense layers
     dense01 = keras.layers.Dense(DENSE_DIM, activation="tanh")(lstm_out)
+    dropout01 = keras.layers.Dropout(DROPOUT)(dense01)
     # dense02 = keras.layers.Dense(DENSE_DIM // 2, activation="tanh")(dense01)
-    predictions = keras.layers.Dense(len(classes), activation="softmax")(dense01)
+    predictions = keras.layers.Dense(len(classes), activation="softmax")(dropout01)
 
     with tf.device('/cpu:0'):
+        # TEST
         model = keras.models.Model(inputs=[input_lw, input_rw, input_lc, input_rc], outputs=predictions)
+        # model = keras.models.Model(inputs=[input_lw, input_rw], outputs=predictions)
     if args.gpu > 1:
         parallel_model = keras.utils.multi_gpu_model(model, gpus=args.gpu)
         parallel_model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
@@ -166,8 +173,11 @@ def main():
                            validation_data=([val_left_words, val_right_words, val_left_chars, val_right_chars], val_targets))
     else:
         model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+        # TEST
         model.fit([train_left_words, train_right_words, train_left_chars, train_right_chars], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
                   validation_data=([val_left_words, val_right_words, val_left_chars, val_right_chars], val_targets))
+        # model.fit([train_left_words, train_right_words], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
+        #           validation_data=([val_left_words, val_right_words], val_targets))
     model.save("%s.h5" % args.model)
     with open("%s.maps" % args.model, mode="w") as f:
         json.dump((word_to_idx, tgt_to_idx), f)
