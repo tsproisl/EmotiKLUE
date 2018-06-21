@@ -2,98 +2,98 @@
 
 ## Majority baseline ##
 
-Labels: fear;surprise;disgust;joy;anger;sad
+Labels: sad;disgust;surprise;joy;fear;anger
 Label	TP	FP	FN	P	R	F
-fear	0	0	1600	1.0	0.0	0.0
+sad	0	0	1460	1.0	0.0	0.0
+disgust	0	0	1597	1.0	0.0	0.0
 surprise	0	0	1600	1.0	0.0	0.0
-disgust	0	0	1600	1.0	0.0	0.0
-joy	0	0	1600	1.0	0.0	0.0
-anger	1600	8000	0	0.167	1.0	0.286
-sad	0	0	1600	1.0	0.0	0.0
-MicAvg	1600	8000	8000	0.167	0.167	0.167
-MacAvg				0.861	0.167	0.048
-Official result: 0.047619047619047616
+joy	1736	7855	0	0.181	1.0	0.307
+fear	0	0	1598	1.0	0.0	0.0
+anger	0	0	1600	1.0	0.0	0.0
+MicAvg	1736	7855	7855	0.181	0.181	0.181
+MacAvg				0.864	0.167	0.051
+Official result: 0.05108737235513964
 
 ## Bag of words (Naive Bayes) ##
 
-Labels: fear;surprise;disgust;joy;anger;sad
+Labels: sad;disgust;surprise;joy;fear;anger
 Label	TP	FP	FN	P	R	F
-fear	820	826	780	0.498	0.512	0.505
-surprise	741	889	859	0.455	0.463	0.459
-disgust	895	771	705	0.537	0.559	0.548
-joy	810	777	790	0.51	0.506	0.508
-anger	632	749	968	0.458	0.395	0.424
-sad	694	996	906	0.411	0.434	0.422
-MicAvg	4592	5008	5008	0.478	0.478	0.478
-MacAvg				0.478	0.478	0.478
-Official result: 0.47772501554699626
+sad	550	707	910	0.438	0.377	0.405
+disgust	876	781	721	0.529	0.549	0.538
+surprise	738	911	862	0.448	0.461	0.454
+joy	1104	872	632	0.559	0.636	0.595
+fear	819	830	779	0.497	0.513	0.504
+anger	640	763	960	0.456	0.4	0.426
+MicAvg	4727	4864	4864	0.493	0.493	0.493
+MacAvg				0.488	0.489	0.487
+Official result: 0.48718331013903365
 
 ## Bag of words tf-idf (Naive Bayes) ##
 
-Labels: fear;surprise;disgust;joy;anger;sad
+Labels: sad;disgust;surprise;joy;fear;anger
 Label	TP	FP	FN	P	R	F
-fear	817	841	783	0.493	0.511	0.502
-surprise	645	787	955	0.45	0.403	0.425
-disgust	898	873	702	0.507	0.561	0.533
-joy	776	786	824	0.497	0.485	0.491
-anger	603	741	997	0.449	0.377	0.41
-sad	698	1135	902	0.381	0.436	0.407
-MicAvg	4437	5163	5163	0.462	0.462	0.462
-MacAvg				0.463	0.462	0.461
-Official result: 0.4611487943389731
+sad	371	388	1089	0.489	0.254	0.334
+disgust	905	899	692	0.502	0.567	0.532
+surprise	625	804	975	0.437	0.391	0.413
+joy	1202	1395	534	0.463	0.692	0.555
+fear	807	846	791	0.488	0.505	0.496
+anger	604	745	996	0.448	0.378	0.41
+MicAvg	4514	5077	5077	0.471	0.471	0.471
+MacAvg				0.471	0.464	0.457
+Official result: 0.4566939401401855
 
 ## Bag of words (Linear SVC) ##
 
-Labels: fear;surprise;disgust;joy;anger;sad
+Labels: sad;disgust;surprise;joy;fear;anger
 Label	TP	FP	FN	P	R	F
-fear	816	793	784	0.507	0.51	0.509
-surprise	726	893	874	0.448	0.454	0.451
-disgust	887	869	713	0.505	0.554	0.529
-joy	805	820	795	0.495	0.503	0.499
-anger	653	827	947	0.441	0.408	0.424
-sad	622	889	978	0.412	0.389	0.4
-MicAvg	4509	5091	5091	0.47	0.47	0.47
-MacAvg				0.468	0.47	0.469
-Official result: 0.46856151603440677
+sad	606	816	854	0.426	0.415	0.421
+disgust	881	856	716	0.507	0.552	0.528
+surprise	721	881	879	0.45	0.451	0.45
+joy	1021	714	715	0.588	0.588	0.588
+fear	817	798	781	0.506	0.511	0.509
+anger	646	834	954	0.436	0.404	0.419
+MicAvg	4692	4899	4899	0.489	0.489	0.489
+MacAvg				0.486	0.487	0.486
+Official result: 0.4859536180855588
 
 ## Bag of words tf-idf (Linear SVC) ##
 
-Labels: fear;surprise;disgust;joy;anger;sad
+Labels: sad;disgust;surprise;joy;fear;anger
 Label	TP	FP	FN	P	R	F
-fear	855	787	745	0.521	0.534	0.527
-surprise	764	906	836	0.457	0.477	0.467
-disgust	919	817	681	0.529	0.574	0.551
-joy	833	787	767	0.514	0.521	0.517
-anger	678	827	922	0.45	0.424	0.437
-sad	619	808	981	0.434	0.387	0.409
-MicAvg	4668	4932	4932	0.486	0.486	0.486
-MacAvg				0.484	0.486	0.485
-Official result: 0.48479696413185175
+sad	586	737	874	0.443	0.401	0.421
+disgust	910	812	687	0.528	0.57	0.548
+surprise	760	906	840	0.456	0.475	0.465
+joy	1044	673	692	0.608	0.601	0.605
+fear	866	778	732	0.527	0.542	0.534
+anger	684	835	916	0.45	0.427	0.439
+MicAvg	4850	4741	4741	0.506	0.506	0.506
+MacAvg				0.502	0.503	0.502
+Official result: 0.5020698555771235
 
 ## Bag of uni- and bigrams (Linear SVC) ##
 
-Labels: fear;surprise;disgust;joy;anger;sad
+Labels: sad;disgust;surprise;joy;fear;anger
 Label	TP	FP	FN	P	R	F
-fear	919	650	681	0.586	0.574	0.58
-surprise	872	795	728	0.523	0.545	0.534
-disgust	914	687	686	0.571	0.571	0.571
-joy	917	709	683	0.564	0.573	0.569
-anger	757	768	843	0.496	0.473	0.484
-sad	773	839	827	0.48	0.483	0.481
-MicAvg	5152	4448	4448	0.537	0.537	0.537
-MacAvg				0.537	0.537	0.537
-Official result: 0.5365323746236651
+sad	732	698	728	0.512	0.501	0.507
+disgust	915	708	682	0.564	0.573	0.568
+surprise	871	779	729	0.528	0.544	0.536
+joy	1147	608	589	0.654	0.661	0.657
+fear	937	673	661	0.582	0.586	0.584
+anger	758	765	842	0.498	0.474	0.485
+MicAvg	5360	4231	4231	0.559	0.559	0.559
+MacAvg				0.556	0.557	0.556
+Official result: 0.5562684907003398
 
 ## Bag of uni- and bigrams tf-idf (Linear SVC) ##
 
-Labels: fear;surprise;disgust;joy;anger;sad
+Labels: sad;disgust;surprise;joy;fear;anger
 Label	TP	FP	FN	P	R	F
-fear	1000	630	600	0.613	0.625	0.619
-surprise	933	697	667	0.572	0.583	0.578
-disgust	965	601	635	0.616	0.603	0.61
-joy	952	691	648	0.579	0.595	0.587
-anger	825	740	775	0.527	0.516	0.521
-sad	812	754	788	0.519	0.507	0.513
-MicAvg	5487	4113	4113	0.572	0.572	0.572
-MacAvg				0.571	0.572	0.571
-Official result: 0.571315642531662
+sad	796	641	664	0.554	0.545	0.55
+disgust	957	625	640	0.605	0.599	0.602
+surprise	942	702	658	0.573	0.589	0.581
+joy	1175	546	561	0.683	0.677	0.68
+fear	1001	637	597	0.611	0.626	0.619
+anger	822	747	778	0.524	0.514	0.519
+MicAvg	5693	3898	3898	0.594	0.594	0.594
+MacAvg				0.592	0.592	0.592
+Official result: 0.5915992378821602
