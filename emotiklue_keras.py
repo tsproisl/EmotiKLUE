@@ -16,6 +16,16 @@ import keras.utils
 import tensorflow as tf
 
 
+def arguments():
+    parser = argparse.ArgumentParser("EmotiKLUE")
+    parser.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
+    parser.add_argument("--train", type=os.path.abspath, required=True, help="Dataset for training")
+    parser.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
+    parser.add_argument("--embeddings", type=os.path.abspath, required=True, help="Word embeddings")
+    parser.add_argument("--gpu", type=int, default=0, help="Number of GPUs to use")
+    return parser.parse_args()
+
+
 def read_dataset(filename):
     data = []
     vocabulary, classes = set(), set()
@@ -26,12 +36,8 @@ def read_dataset(filename):
             line = unicodedata.normalize("NFD", line)
             cls, text = line.strip().split("\t")
             left_str, right_str = text.strip().split("[#TRIGGERWORD#]")
-            left_str = left_str.lower()
-            right_str = right_str.lower()
-            # left_words = left_str.strip().split()
-            # right_words = right_str.strip().split()
-            left_words = re.findall(r"\w+", left_str)
-            right_words = re.findall(r"\w+", right_str)
+            left_words = left_str.strip().split()
+            right_words = right_str.strip().split()
             vocabulary.update(set(itertools.chain(left_words, right_words)))
             classes.add(cls)
             data.append((left_words, right_words, left_str, right_str, cls))
@@ -61,16 +67,6 @@ def vectorize_words(sequence, mapping, reverse=False):
     if reverse:
         sequence = reversed(sequence)
     return [mapping.get(w, len(mapping) + 1) for w in sequence]
-
-
-def arguments():
-    parser = argparse.ArgumentParser("EmotiKLUE")
-    parser.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
-    parser.add_argument("--train", type=os.path.abspath, required=True, help="Dataset for training")
-    parser.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
-    parser.add_argument("--embeddings", type=os.path.abspath, required=True, help="Word embeddings")
-    parser.add_argument("--gpu", type=int, default=0, help="Number of GPUs to use")
-    return parser.parse_args()
 
 
 def main():

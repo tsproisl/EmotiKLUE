@@ -25,8 +25,7 @@ def read_train_data(filename):
         for line in fh:
             l, d = line.strip().split("\t")
             d = re.sub(r"\[#TRIGGERWORD#\]", "", d)
-            words = re.findall(r"\w+", d.lower().strip())
-            text = " ".join(words)
+            text = " ".join(d.split())
             data.append(text)
             labels.append(l)
     return data, labels
@@ -142,9 +141,9 @@ def tfidf_bigrams_svm(train_data, train_labels, test_data, test_labels):
 
 def main():
     args = arguments()
-    train_data, train_labels = read_train_data(os.path.join(args.datadir, "train.csv"))
-    trial_data = read_train_data(os.path.join(args.datadir, "trial.csv"))[0]
-    trial_labels = read_labels(os.path.join(args.datadir, "trial.labels"))
+    train_data, train_labels = read_train_data(os.path.join(args.datadir, "train-v3.csv_tokenized.txt"))
+    trial_data = read_train_data(os.path.join(args.datadir, "trial-v3.csv_tokenized.txt"))[0]
+    trial_labels = read_labels(os.path.join(args.datadir, "trial-v3.labels"))
     print("# Some baselines for IEST #")
     majority_baseline(train_labels, trial_labels)
     bow_baseline_naive_bayes(train_data, train_labels, trial_data, trial_labels)
