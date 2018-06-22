@@ -48,11 +48,12 @@ def read_dataset(filename):
         for line in fh:
             if "[#TRIGGERWORD#]" not in line:
                 continue
-            line = unicodedata.normalize("NFD", line)
             cls, text = line.strip().split("\t")
             left_str, right_str = text.strip().split("[#TRIGGERWORD#]")
             left_words = left_str.strip().split()
             right_words = right_str.strip().split()
+            left_str = unicodedata.normalize("NFD", left_str)
+            right_str = unicodedata.normalize("NFD", right_str)
             vocabulary.update(set(itertools.chain(left_words, right_words)))
             classes.add(cls)
             data.append((left_words, right_words, left_str, right_str, cls))
