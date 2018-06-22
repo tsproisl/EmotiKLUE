@@ -18,15 +18,19 @@ import tensorflow as tf
 
 def arguments():
     parser = argparse.ArgumentParser("EmotiKLUE")
-    me_group = parser.add_mutually_exclusive_group(required=True)
-    train_group = me_group.add_argument_group()
-    train_group.add_argument("--train", type=os.path.abspath, required=True, help="Path to model")
-    train_group.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
-    train_group.add_argument("--embeddings", type=os.path.abspath, required=True, help="Word embeddings")
-    train_group.add_argument("--chars", action="store_true", help="Use additional character-level LSTMs")
-    train_group.add_argument("--gpu", type=int, default=0, help="Number of GPUs to use")
-    me_group.add_argument("--test", type=os.path.abspath, required=True, help="Path to model")
-    parser.add_argument("FILE", type=os.path.abspath, required=True, help="Dataset for training/testing")
+    subparsers = parser.add_subparsers()
+    parser_train = subparsers.add_parser("train", help="train a model (run 'train -h' for more details)")
+    parser_test = subparsers.add_parser("test", help="test a model (run 'test -h' for more details)")
+    parser_train.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
+    parser_train.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
+    parser_train.add_argument("--embeddings", type=os.path.abspath, required=True, help="Word embeddings")
+    parser_train.add_argument("--chars", action="store_true", help="Use additional character-level LSTMs")
+    parser_train.add_argument("--gpu", type=int, default=0, help="Number of GPUs to use")
+    parser_train.add_argument("FILE", type=os.path.abspath, help="Dataset for training/testing")
+    parser_train.set_defaults(func=train)
+    parser_test.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
+    parser_test.add_argument("FILE", type=os.path.abspath, help="Dataset for training/testing")
+    parser_test.set_defaults(func=test)
     return parser.parse_args()
 
 
@@ -94,7 +98,6 @@ def train(args):
     # mappings
     word_to_idx = {w: i for i, w in enumerate(sorted(vocabulary), start=1)}
     tgt_to_idx = {c: i for i, c in enumerate(sorted(classes), start=0)}
-    idx_to_tgt = {i: c for c, i in tgt_to_idx.items()}
 
     # create embedding layers
     embedding_matrix = np.zeros((len(vocabulary) + 2, WORD_EMBEDDING_DIM))
@@ -181,32 +184,31 @@ def train(args):
         else:
             model.fit([train_left_words, train_right_words], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
                       validation_data=([val_left_words, val_right_words], val_targets))
-    model.save("%s.h5" % args.train)
-    with open("%s.maps" % args.train, mode="w") as f:
+    model.save("%s.h5" % args.model)
+    with open("%s.maps" % args.model, mode="w") as f:
         json.dump((word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, args.chars), f)
 
 
 def test(args):
-    model = keras.models.load_model("%s.h5" % args.test)
-    with open("%s.h5" % args.test) as f:
+    model = keras.models.load_model("%s.h5" % args.model)
+    with open("%s.h5" % args.model) as f:
         word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, chars = json.load(f)
+    idx_to_tgt = {i: c for c, i in tgt_to_idx.items()}
     test_lw, test_rw, test_lc, test_rc, test_tgt, _, _ = read_dataset(args.FILE)
     test_left_words = keras.preprocessing.sequence.pad_sequences(test_lw, maxlen=max_len_lw, padding="pre", truncating="pre")
     test_right_words = keras.preprocessing.sequence.pad_sequences(test_rw, maxlen=max_len_rw, padding="pre", truncating="pre")
     test_left_chars = keras.preprocessing.sequence.pad_sequences(test_lc, maxlen=max_len_lc, padding="pre", truncating="pre")
     test_right_chars = keras.preprocessing.sequence.pad_sequences(test_rc, maxlen=max_len_rc, padding="pre", truncating="pre")
     if chars:
-        model.predict([test_left_words, test_right_words, test_left_chars, test_right_chars])
+        predictions = model.predict([test_left_words, test_right_words, test_left_chars, test_right_chars])
     else:
-        model.predict([test_left_words, test_right_words])
+        predictions = model.predict([test_left_words, test_right_words])
+    print(predictions)
 
 
 def main():
     args = arguments()
-    if args.train:
-        train(args)
-    elif args.test:
-        test(args)
+    args.func(args)
 
 
 if __name__ == "__main__":
