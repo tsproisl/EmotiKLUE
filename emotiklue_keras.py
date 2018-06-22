@@ -21,16 +21,22 @@ def arguments():
     parser = argparse.ArgumentParser("EmotiKLUE")
     subparsers = parser.add_subparsers()
     parser_train = subparsers.add_parser("train", help="train a model (run 'train -h' for more details)")
+    parser_retrain = subparsers.add_parser("retrain", help="retrain a model (run 'retrain -h' for more details)")
     parser_test = subparsers.add_parser("test", help="test a model (run 'test -h' for more details)")
     parser_train.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
     parser_train.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
     parser_train.add_argument("--embeddings", type=os.path.abspath, required=True, help="Word embeddings")
     parser_train.add_argument("--chars", action="store_true", help="Use additional character-level LSTMs")
-    parser_train.add_argument("--gpu", type=int, default=0, help="Number of GPUs to use")
-    parser_train.add_argument("FILE", type=os.path.abspath, help="Dataset for training/testing")
+    # parser_train.add_argument("--gpu", type=int, default=0, help="Number of GPUs to use")
+    parser_train.add_argument("FILE", type=os.path.abspath, help="Dataset for training")
     parser_train.set_defaults(func=train)
+    parser_retrain.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
+    parser_retrain.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
+    # parser_retrain.add_argument("--gpu", type=int, default=0, help="Number of GPUs to use")
+    parser_retrain.add_argument("FILE", type=os.path.abspath, help="Dataset for retraining")
+    parser_retrain.set_defaults(func=retrain)
     parser_test.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
-    parser_test.add_argument("FILE", type=os.path.abspath, help="Dataset for training/testing")
+    parser_test.add_argument("FILE", type=os.path.abspath, help="Dataset for testing")
     parser_test.set_defaults(func=test)
     return parser.parse_args()
 
@@ -172,21 +178,61 @@ def train(args):
             model = keras.models.Model(inputs=[input_lw, input_rw, input_lc, input_rc], outputs=predictions)
         else:
             model = keras.models.Model(inputs=[input_lw, input_rw], outputs=predictions)
-    if args.gpu > 1:
-        parallel_model = keras.utils.multi_gpu_model(model, gpus=args.gpu)
-        parallel_model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
-        parallel_model.fit([train_left_words, train_right_words, train_left_chars, train_right_chars], targets, batch_size=BATCH_SIZE * args.gpu, epochs=EPOCHS,
-                           validation_data=([val_left_words, val_right_words, val_left_chars, val_right_chars], val_targets))
+    # if args.gpu > 1:
+    #     parallel_model = keras.utils.multi_gpu_model(model, gpus=args.gpu)
+    #     parallel_model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+    #     parallel_model.fit([train_left_words, train_right_words, train_left_chars, train_right_chars], targets, batch_size=BATCH_SIZE * args.gpu, epochs=EPOCHS,
+    #                        validation_data=([val_left_words, val_right_words, val_left_chars, val_right_chars], val_targets))
+    # else:
+    model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+    if args.chars:
+        model.fit([train_left_words, train_right_words, train_left_chars, train_right_chars], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
+                  validation_data=([val_left_words, val_right_words, val_left_chars, val_right_chars], val_targets))
     else:
-        model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
-        if args.chars:
-            model.fit([train_left_words, train_right_words, train_left_chars, train_right_chars], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
-                      validation_data=([val_left_words, val_right_words, val_left_chars, val_right_chars], val_targets))
-        else:
-            model.fit([train_left_words, train_right_words], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
-                      validation_data=([val_left_words, val_right_words], val_targets))
+        model.fit([train_left_words, train_right_words], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
+                  validation_data=([val_left_words, val_right_words], val_targets))
     model.save("%s.h5" % args.model)
     with open("%s.maps" % args.model, mode="w", encoding="utf-8") as f:
+        json.dump((word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, args.chars), f, ensure_ascii=False)
+
+
+def retrain(args):
+    BATCH_SIZE = 160
+    EPOCHS = 10
+    model = keras.models.load_model("%s.h5" % args.model)
+    model.optimizer.set_state()
+    with open("%s.maps" % args.model, encoding="utf-8") as f:
+        word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, chars = json.load(f)
+    train_lw, train_rw, train_lc, train_rc, train_tgt, _, _ = read_dataset(args.FILE)
+    train_lw = [vectorize_words(lw, word_to_idx) for lw in train_lw]
+    train_rw = [vectorize_words(rw, word_to_idx, reverse=True) for rw in train_rw]
+    train_lc = [vectorize_characters(lc) for lc in train_lc]
+    train_rc = [vectorize_characters(rc, reverse=True) for rc in train_rc]
+    train_tgt = vectorize_words(train_tgt, tgt_to_idx)
+    targets = keras.utils.to_categorical(train_tgt, num_classes=len(tgt_to_idx.values()))
+    train_left_words = keras.preprocessing.sequence.pad_sequences(train_lw, maxlen=max_len_lw, padding="pre", truncating="pre")
+    train_right_words = keras.preprocessing.sequence.pad_sequences(train_rw, maxlen=max_len_rw, padding="pre", truncating="pre")
+    train_left_chars = keras.preprocessing.sequence.pad_sequences(train_lc, maxlen=max_len_lc, padding="pre", truncating="pre")
+    train_right_chars = keras.preprocessing.sequence.pad_sequences(train_rc, maxlen=max_len_rc, padding="pre", truncating="pre")
+    val_lw, val_rw, val_lc, val_rc, val_tgt, _, _ = read_dataset(args.val)
+    val_lw = [vectorize_words(lw, word_to_idx) for lw in val_lw]
+    val_rw = [vectorize_words(rw, word_to_idx, reverse=True) for rw in val_rw]
+    val_lc = [vectorize_characters(lc) for lc in val_lc]
+    val_rc = [vectorize_characters(rc, reverse=True) for rc in val_rc]
+    val_tgt = vectorize_words(val_tgt, tgt_to_idx)
+    val_targets = keras.utils.to_categorical(val_tgt, num_classes=len(tgt_to_idx.values()))
+    val_left_words = keras.preprocessing.sequence.pad_sequences(val_lw, maxlen=max_len_lw, padding="pre", truncating="pre")
+    val_right_words = keras.preprocessing.sequence.pad_sequences(val_rw, maxlen=max_len_rw, padding="pre", truncating="pre")
+    val_left_chars = keras.preprocessing.sequence.pad_sequences(val_lc, maxlen=max_len_lc, padding="pre", truncating="pre")
+    val_right_chars = keras.preprocessing.sequence.pad_sequences(val_rc, maxlen=max_len_rc, padding="pre", truncating="pre")
+    if chars:
+        model.fit([train_left_words, train_right_words, train_left_chars, train_right_chars], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
+                  validation_data=([val_left_words, val_right_words, val_left_chars, val_right_chars], val_targets))
+    else:
+        model.fit([train_left_words, train_right_words], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
+                  validation_data=([val_left_words, val_right_words], val_targets))
+    model.save("%s_retrain.h5" % args.model)
+    with open("%s_retrain.maps" % args.model, mode="w", encoding="utf-8") as f:
         json.dump((word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, args.chars), f, ensure_ascii=False)
 
 
