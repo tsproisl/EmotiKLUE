@@ -186,16 +186,20 @@ def train(args):
             model.fit([train_left_words, train_right_words], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
                       validation_data=([val_left_words, val_right_words], val_targets))
     model.save("%s.h5" % args.model)
-    with open("%s.maps" % args.model, mode="w") as f:
-        json.dump((word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, args.chars), f)
+    with open("%s.maps" % args.model, mode="w", encoding="utf-8") as f:
+        json.dump((word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, args.chars), f, ensure_ascii=False)
 
 
 def test(args):
     model = keras.models.load_model("%s.h5" % args.model)
-    with open("%s.h5" % args.model) as f:
+    with open("%s.maps" % args.model, encoding="utf-8") as f:
         word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, chars = json.load(f)
     idx_to_tgt = {i: c for c, i in tgt_to_idx.items()}
     test_lw, test_rw, test_lc, test_rc, test_tgt, _, _ = read_dataset(args.FILE)
+    test_lw = [vectorize_words(lw, word_to_idx) for lw in test_lw]
+    test_rw = [vectorize_words(rw, word_to_idx, reverse=True) for rw in test_rw]
+    test_lc = [vectorize_characters(lc) for lc in test_lc]
+    test_rc = [vectorize_characters(rc, reverse=True) for rc in test_rc]
     test_left_words = keras.preprocessing.sequence.pad_sequences(test_lw, maxlen=max_len_lw, padding="pre", truncating="pre")
     test_right_words = keras.preprocessing.sequence.pad_sequences(test_rw, maxlen=max_len_rw, padding="pre", truncating="pre")
     test_left_chars = keras.preprocessing.sequence.pad_sequences(test_lc, maxlen=max_len_lc, padding="pre", truncating="pre")
@@ -204,9 +208,8 @@ def test(args):
         predictions = model.predict([test_left_words, test_right_words, test_left_chars, test_right_chars])
     else:
         predictions = model.predict([test_left_words, test_right_words])
-    print(predictions)
-    predicted = [idx_to_tgt[p] for p in predictions]
-    evaluate_iest.calculatePRF(test_tgt, predicted)
+    predicted = [idx_to_tgt[p] for p in predictions.argmax(axis=1)]
+    evaluate_iest.calculatePRF(list(test_tgt), predicted)
 
 
 def main():
