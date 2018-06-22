@@ -18,12 +18,15 @@ import tensorflow as tf
 
 def arguments():
     parser = argparse.ArgumentParser("EmotiKLUE")
-    parser.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
-    parser.add_argument("--train", type=os.path.abspath, required=True, help="Dataset for training")
-    parser.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
-    parser.add_argument("--embeddings", type=os.path.abspath, required=True, help="Word embeddings")
-    parser.add_argument("--chars", action="store_true", help="Use additional character-level LSTMs")
-    parser.add_argument("--gpu", type=int, default=0, help="Number of GPUs to use")
+    me_group = parser.add_mutually_exclusive_group(required=True)
+    train_group = me_group.add_argument_group()
+    train_group.add_argument("--train", type=os.path.abspath, required=True, help="Path to model")
+    train_group.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
+    train_group.add_argument("--embeddings", type=os.path.abspath, required=True, help="Word embeddings")
+    train_group.add_argument("--chars", action="store_true", help="Use additional character-level LSTMs")
+    train_group.add_argument("--gpu", type=int, default=0, help="Number of GPUs to use")
+    me_group.add_argument("--test", type=os.path.abspath, required=True, help="Path to model")
+    parser.add_argument("FILE", type=os.path.abspath, required=True, help="Dataset for training/testing")
     return parser.parse_args()
 
 
@@ -70,9 +73,7 @@ def vectorize_words(sequence, mapping, reverse=False):
     return [mapping.get(w, len(mapping) + 1) for w in sequence]
 
 
-def main():
-    args = arguments()
-
+def train(args):
     WORD_EMBEDDING_DIM = 100
     CHAR_EMBEDDING_DIM = 16
     WORD_LSTM_DIM = WORD_EMBEDDING_DIM
@@ -86,7 +87,7 @@ def main():
     BATCH_SIZE = 160
     EPOCHS = 10
 
-    train_lw, train_rw, train_lc, train_rc, train_tgt, vocabulary, classes = read_dataset(args.train)
+    train_lw, train_rw, train_lc, train_rc, train_tgt, vocabulary, classes = read_dataset(args.FILE)
     val_lw, val_rw, val_lc, val_rc, val_tgt, _, _ = read_dataset(args.val)
     embeddings_index = read_glove(args.embeddings)
 
@@ -180,9 +181,32 @@ def main():
         else:
             model.fit([train_left_words, train_right_words], targets, batch_size=BATCH_SIZE, epochs=EPOCHS,
                       validation_data=([val_left_words, val_right_words], val_targets))
-    model.save("%s.h5" % args.model)
-    with open("%s.maps" % args.model, mode="w") as f:
-        json.dump((word_to_idx, tgt_to_idx), f)
+    model.save("%s.h5" % args.train)
+    with open("%s.maps" % args.train, mode="w") as f:
+        json.dump((word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, args.chars), f)
+
+
+def test(args):
+    model = keras.models.load_model("%s.h5" % args.test)
+    with open("%s.h5" % args.test) as f:
+        word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, chars = json.load(f)
+    test_lw, test_rw, test_lc, test_rc, test_tgt, _, _ = read_dataset(args.FILE)
+    test_left_words = keras.preprocessing.sequence.pad_sequences(test_lw, maxlen=max_len_lw, padding="pre", truncating="pre")
+    test_right_words = keras.preprocessing.sequence.pad_sequences(test_rw, maxlen=max_len_rw, padding="pre", truncating="pre")
+    test_left_chars = keras.preprocessing.sequence.pad_sequences(test_lc, maxlen=max_len_lc, padding="pre", truncating="pre")
+    test_right_chars = keras.preprocessing.sequence.pad_sequences(test_rc, maxlen=max_len_rc, padding="pre", truncating="pre")
+    if chars:
+        model.predict([test_left_words, test_right_words, test_left_chars, test_right_chars])
+    else:
+        model.predict([test_left_words, test_right_words])
+
+
+def main():
+    args = arguments()
+    if args.train:
+        train(args)
+    elif args.test:
+        test(args)
 
 
 if __name__ == "__main__":
