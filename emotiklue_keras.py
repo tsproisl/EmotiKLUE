@@ -5,7 +5,6 @@ import itertools
 import json
 import gzip
 import os
-import re
 import unicodedata
 
 import numpy as np
@@ -14,6 +13,8 @@ import keras.models
 import keras.preprocessing.sequence
 import keras.utils
 import tensorflow as tf
+
+import evaluate_iest
 
 
 def arguments():
@@ -204,6 +205,8 @@ def test(args):
     else:
         predictions = model.predict([test_left_words, test_right_words])
     print(predictions)
+    predicted = [idx_to_tgt[p] for p in predictions]
+    evaluate_iest.calculatePRF(test_tgt, predicted)
 
 
 def main():
