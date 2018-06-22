@@ -201,7 +201,7 @@ def retrain(args):
     BATCH_SIZE = 160
     EPOCHS = 10
     model = keras.models.load_model("%s.h5" % args.model)
-    model.optimizer.set_state()
+    # model.optimizer.set_state()
     with open("%s.maps" % args.model, encoding="utf-8") as f:
         word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, chars = json.load(f)
     train_lw, train_rw, train_lc, train_rc, train_tgt, _, _ = read_dataset(args.FILE)
