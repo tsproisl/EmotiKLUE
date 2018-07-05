@@ -336,6 +336,15 @@ def train(args):
     with open("%s.maps" % args.model, mode="w", encoding="utf-8") as f:
         json.dump((word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, args.chars), f, ensure_ascii=False)
 
+    # Official score
+    if args.chars:
+        predictions = model.predict([val_left_words, val_right_words, val_left_chars, val_right_chars, val_topics])
+    else:
+        predictions = model.predict([val_left_words, val_right_words, val_topics])
+    idx_to_tgt = {i: c for c, i in tgt_to_idx.items()}
+    predicted = [idx_to_tgt[p] for p in predictions.argmax(axis=1)]
+    evaluate_iest.calculatePRF(list(val_targets), predicted)
+
 
 def retrain(args):
     BATCH_SIZE = 160
@@ -395,6 +404,7 @@ def test(args):
         word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, chars = json.load(f)
     idx_to_tgt = {i: c for c, i in tgt_to_idx.items()}
     test_lw, test_rw, test_lc, test_rc, test_tgt, _, _ = read_dataset(args.FILE)
+    left_words = test_lw
     topics = topic_distribution(args.dict, args.lda, test_lw, test_rw)
     test_lw = [vectorize_words(lw, word_to_idx) for lw in test_lw]
     test_rw = [vectorize_words(rw, word_to_idx, reverse=True) for rw in test_rw]
@@ -409,6 +419,10 @@ def test(args):
     else:
         predictions = model.predict([test_left_words, test_right_words, topics])
     predicted = [idx_to_tgt[p] for p in predictions.argmax(axis=1)]
+    evaluate_iest.calculatePRF(list(test_tgt), predicted)
+    for i, lw in enumerate(left_words):
+        if len(lw) > 0 and lw[-1] == "un":
+            predicted[i] = "joy"
     evaluate_iest.calculatePRF(list(test_tgt), predicted)
 
 
