@@ -87,6 +87,7 @@ def arguments():
     # parser_adapt = subparsers.add_parser("adapt", help="adapt a model (run 'retrain -h' for more details)")
     parser_retrain = subparsers.add_parser("retrain", help="retrain a model (run 'retrain -h' for more details)")
     parser_test = subparsers.add_parser("test", help="test a model (run 'test -h' for more details)")
+    parser_predict = subparsers.add_parser("predict", help="use model  to predict (run 'predict -h' for more details)")
     parser_train.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
     parser_train.add_argument("--val", type=os.path.abspath, required=True, help="Dataset for validation")
     parser_train.add_argument("--embeddings", type=os.path.abspath, required=True, help="Word embeddings")
@@ -115,6 +116,11 @@ def arguments():
     parser_test.add_argument("--dict", type=os.path.abspath, required=True, help="Dictionary for LDA")
     parser_test.add_argument("FILE", type=os.path.abspath, help="Dataset for testing")
     parser_test.set_defaults(func=test)
+    parser_predict.add_argument("-m", "--model", type=os.path.abspath, required=True, help="Path to model")
+    parser_predict.add_argument("--lda", type=str, required=True, help="LDA model")
+    parser_predict.add_argument("--dict", type=os.path.abspath, required=True, help="Dictionary for LDA")
+    parser_predict.add_argument("FILE", type=os.path.abspath, help="Dataset for predicting")
+    parser_predict.set_defaults(func=predict)
     return parser.parse_args()
 
 
@@ -191,6 +197,7 @@ def train(args):
 
     train_lw, train_rw, train_lc, train_rc, train_tgt, vocabulary, classes = read_dataset(args.FILE)
     val_lw, val_rw, val_lc, val_rc, val_tgt, _, _ = read_dataset(args.val)
+    val_tgts = val_tgt
     embeddings_index = read_glove(args.embeddings)
 
     # mappings
@@ -343,7 +350,7 @@ def train(args):
         predictions = model.predict([val_left_words, val_right_words, val_topics])
     idx_to_tgt = {i: c for c, i in tgt_to_idx.items()}
     predicted = [idx_to_tgt[p] for p in predictions.argmax(axis=1)]
-    evaluate_iest.calculatePRF(list(val_targets), predicted)
+    evaluate_iest.calculatePRF(val_tgts, predicted)
 
 
 def retrain(args):
@@ -366,6 +373,7 @@ def retrain(args):
     train_left_chars = keras.preprocessing.sequence.pad_sequences(train_lc, maxlen=max_len_lc, padding="pre", truncating="pre")
     train_right_chars = keras.preprocessing.sequence.pad_sequences(train_rc, maxlen=max_len_rc, padding="pre", truncating="pre")
     val_lw, val_rw, val_lc, val_rc, val_tgt, _, _ = read_dataset(args.val)
+    val_tgts = val_tgt
     val_topics = topic_distribution(args.dict, args.lda, val_lw, val_rw)
     val_lw = [vectorize_words(lw, word_to_idx) for lw in val_lw]
     val_rw = [vectorize_words(rw, word_to_idx, reverse=True) for rw in val_rw]
@@ -394,7 +402,7 @@ def retrain(args):
         predictions = model.predict([val_left_words, val_right_words, val_topics])
     idx_to_tgt = {i: c for c, i in tgt_to_idx.items()}
     predicted = [idx_to_tgt[p] for p in predictions.argmax(axis=1)]
-    evaluate_iest.calculatePRF(list(val_targets), predicted)
+    evaluate_iest.calculatePRF(val_tgts, predicted)
 
 
 def test(args):
@@ -424,6 +432,30 @@ def test(args):
         if len(lw) > 0 and lw[-1] == "un":
             predicted[i] = "joy"
     evaluate_iest.calculatePRF(list(test_tgt), predicted)
+
+
+def predict(args):
+    # with keras.utils.CustomObjectScope({L1L2_m.__name__: L1L2_m}):
+    model = keras.models.load_model("%s.h5" % args.model)
+    with open("%s.maps" % args.model, encoding="utf-8") as f:
+        word_to_idx, tgt_to_idx, max_len_lw, max_len_rw, max_len_lc, max_len_rc, chars = json.load(f)
+    idx_to_tgt = {i: c for c, i in tgt_to_idx.items()}
+    test_lw, test_rw, test_lc, test_rc, test_tgt, _, _ = read_dataset(args.FILE)
+    topics = topic_distribution(args.dict, args.lda, test_lw, test_rw)
+    test_lw = [vectorize_words(lw, word_to_idx) for lw in test_lw]
+    test_rw = [vectorize_words(rw, word_to_idx, reverse=True) for rw in test_rw]
+    test_lc = [vectorize_characters(lc) for lc in test_lc]
+    test_rc = [vectorize_characters(rc, reverse=True) for rc in test_rc]
+    test_left_words = keras.preprocessing.sequence.pad_sequences(test_lw, maxlen=max_len_lw, padding="pre", truncating="pre")
+    test_right_words = keras.preprocessing.sequence.pad_sequences(test_rw, maxlen=max_len_rw, padding="pre", truncating="pre")
+    test_left_chars = keras.preprocessing.sequence.pad_sequences(test_lc, maxlen=max_len_lc, padding="pre", truncating="pre")
+    test_right_chars = keras.preprocessing.sequence.pad_sequences(test_rc, maxlen=max_len_rc, padding="pre", truncating="pre")
+    if chars:
+        predictions = model.predict([test_left_words, test_right_words, test_left_chars, test_right_chars, topics])
+    else:
+        predictions = model.predict([test_left_words, test_right_words, topics])
+    predicted = [idx_to_tgt[p] for p in predictions.argmax(axis=1)]
+    print("\n".join(predicted))
 
 
 def regularizer_factory(l2, prior, adapt=False):
