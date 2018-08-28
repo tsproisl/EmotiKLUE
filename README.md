@@ -1,4 +1,37 @@
-This repository is for our software.
+# EmotiKLUE #
+
+## Introduction ##
+
+EmotiKLUE is a submission to the [WASSA 2018 Implicit Emotion Shared
+Task](http://implicitemotions.wassa2018.com/). The aim of the shared
+task is to predict one of six emotions (anger, disgust, fear, joy,
+sadness, surprise) from the context of masked emotion words as in the
+following example:
+
+> My dad was [#TRIGGERWORD#] that I washed his car so he gave me money
+> to buy snacks 😢
+
+EmotiKLUE tackles this task by learning independent representations of
+the left and right contexts of the masked emotion word and by
+combining those representations with an LDA topic model.
+
+The system is described and evaluated in greater detail in Proisl et
+al. (to appear).
 
 
-[NEWLINE]
+## Usage ##
+
+For information on how to train, retrain or test a model or on how to
+use it for prediction, see the help messages of the corresponding
+subcommands:
+
+    emotiklue.py {train,retrain,test,predict} -h
+
+
+## References ##
+
+  * Proisl, Thomas, Philipp Heinrich, Besim Kabashi, and Stefan Evert
+    (to appear): “EmotiKLUE at IEST 2018: Topic-Informed
+    Classification of Implicit Emotions.” In *Proceedings of the 9th
+    Workshop on Computational Approaches to Subjectivity, Sentiment &
+    Social Media Analysis (WASSA)*. Brussels.
