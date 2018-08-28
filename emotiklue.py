@@ -4,6 +4,7 @@ import argparse
 import gzip
 import itertools
 import json
+import multiprocessing
 import os
 
 import gensim
@@ -145,13 +146,15 @@ def read_dataset(filename):
 
 def read_glove(filename):
     embeddings_index = {}
+    size = 0
     with gzip.open(filename, mode="rt", encoding="utf8") as fh:
         for line in fh:
             values = line.strip().split()
+            size = len(values) - 1
             word = values[0]
             coefs = np.asarray(values[1:], dtype='float32')
             embeddings_index[word] = coefs
-    return embeddings_index
+    return embeddings_index, size
 
 
 def vectorize_words(sequence, mapping, reverse=False):
@@ -175,17 +178,16 @@ def topic_distribution(dict_path, lda_prefix, left_words, right_words):
 
 
 def train(args):
-    WORD_EMBEDDING_DIM = 300
     WORD_LSTM_DIM = 100
     DENSE_DIM = WORD_LSTM_DIM
     DROPOUT = 0.2
     RECURRENT_DROPOUT = 0.0
     BATCH_SIZE = 160
 
-    train_lw, train_rw, train_lc, train_rc, train_tgt, vocabulary, classes = read_dataset(args.FILE)
-    val_lw, val_rw, val_lc, val_rc, val_tgt, _, _ = read_dataset(args.val)
+    train_lw, train_rw, train_tgt, vocabulary, classes = read_dataset(args.FILE)
+    val_lw, val_rw, val_tgt, _, _ = read_dataset(args.val)
     val_tgts = val_tgt
-    embeddings_index = read_glove(args.embeddings)
+    embeddings_index, WORD_EMBEDDING_DIM = read_glove(args.embeddings)
 
     # mappings
     word_to_idx = {w: i for i, w in enumerate(sorted(vocabulary), start=1)}
@@ -275,7 +277,10 @@ def train(args):
 
     # predictions = keras.layers.Dense(len(classes), activation="softmax")(dropout01)
 
-    model = keras.models.Model(inputs=[input_lw, input_rw, input_topics], outputs=predictions)
+    if args.lda:
+        model = keras.models.Model(inputs=[input_lw, input_rw, input_topics], outputs=predictions)
+    else:
+        model = keras.models.Model(inputs=[input_lw, input_rw], outputs=predictions)
     model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
     model.summary()
     early_stopper = keras.callbacks.EarlyStopping(monitor="val_loss", patience=2)
@@ -450,4 +455,6 @@ def main():
 
 
 if __name__ == "__main__":
+    cpus = int(multiprocessing.cpu_count() * 0.42)
+    K.set_session(K.tf.Session(config=K.tf.ConfigProto(intra_op_parallelism_threads=cpus, inter_op_parallelism_threads=cpus)))
     main()
