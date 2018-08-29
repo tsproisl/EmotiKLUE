@@ -178,7 +178,7 @@ def topic_distribution(dict_path, lda_prefix, left_words, right_words):
 
 
 def train(args):
-    WORD_LSTM_DIM = 100
+    WORD_LSTM_DIM = 300
     DENSE_DIM = WORD_LSTM_DIM
     DROPOUT = 0.2
     RECURRENT_DROPOUT = 0.0
