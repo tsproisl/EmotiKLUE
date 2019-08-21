@@ -16,7 +16,7 @@ the left and right contexts of the masked emotion word and by
 combining those representations with an LDA topic model.
 
 The system is described and evaluated in greater detail in Proisl et
-al. (to appear).
+al. (2018).
 
 
 ## Usage ##
@@ -30,8 +30,5 @@ subcommands:
 
 ## References ##
 
-  * Proisl, Thomas, Philipp Heinrich, Besim Kabashi, and Stefan Evert
-    (to appear): “EmotiKLUE at IEST 2018: Topic-Informed
-    Classification of Implicit Emotions.” In *Proceedings of the 9th
-    Workshop on Computational Approaches to Subjectivity, Sentiment &
-    Social Media Analysis (WASSA)*. Brussels.
+  * Proisl, Thomas, Philipp Heinrich, Besim Kabashi, and Stefan Evert. 2018. “EmotiKLUE at IEST 2018: Topic-Informed Classification of Implicit Emotions.” In *Proceedings of the 9th Workshop on Computational Approaches to Subjectivity, Sentiment and Social Media Analysis (WASSA)*, 235–242. Brussels: Association for Computational Linguistics. [PDF](http://aclweb.org/anthology/W18-6234).
+  
